@@ -1,23 +1,25 @@
-# Dockerfile
+# Hugging Face Spaces (Docker SDK) runs containers as uid 1000 and routes traffic to port 7860.
+FROM python:3.11-slim
 
-# Use a base image
-FROM python:3.9-slim
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    NLTK_DATA=/home/user/nltk_data \
+    PYTHONUNBUFFERED=1
+WORKDIR /home/user/app
 
-# Set the working directory
-WORKDIR /app
+COPY --chown=user requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt \
+    && python -m nltk.downloader -q -d "$NLTK_DATA" stopwords
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --chown=user pyproject.toml README.md ./
+COPY --chown=user src ./src
+RUN pip install --no-cache-dir --user --no-deps .
 
-# Copy application code
-COPY . .
+COPY --chown=user app ./app
+COPY --chown=user models ./models
+ENV MODEL_DIR=/home/user/app/models
 
-# Ensure NLTK data is available
-RUN python -m nltk.downloader -d ./nltk_data punkt punkt_tab stopwords
-
-# Set environment variable for Flask
-ENV FLASK_APP=app.py
-
-# Command to run the application
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:app"]
+EXPOSE 7860
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

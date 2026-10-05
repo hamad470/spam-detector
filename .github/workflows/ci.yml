@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt -e .
+      - run: python -m nltk.downloader -q stopwords
+      - run: ruff check src app tests
+      - run: ruff format --check src app tests
+      - run: pytest -q
+
+  deploy:
+    # Mirrors the repo to a Hugging Face Docker Space, which rebuilds and serves it.
+    # Needs the HF_TOKEN secret (a write token) and the HF_SPACE variable (e.g. "user/spam-detector").
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: ${{ vars.HF_SPACE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when Hugging Face is not configured
+        if: env.HF_TOKEN == '' || env.HF_SPACE == ''
+        run: echo "::warning::HF_TOKEN secret or HF_SPACE variable not set, skipping deploy"
+      - name: Create the Space if needed
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: |
+          pip install -q huggingface_hub
+          python -c "from huggingface_hub import create_repo; import os; create_repo(os.environ['HF_SPACE'], repo_type='space', space_sdk='docker', exist_ok=True, token=os.environ['HF_TOKEN'])"
+      - name: Push to the Space
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: |
+          # Spaces read their config from YAML front matter in README.md; keep it out of the GitHub README.
+          { cat .github/hf-space-header.md; cat README.md; } > README.tmp && mv README.tmp README.md
+          rm -rf data notebooks tests .github
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git lfs install
+          git checkout --orphan hf-deploy
+          git lfs track "*.joblib" "*.png"
+          git add -A
+          git commit -qm "Deploy ${GITHUB_SHA::7} from GitHub"
+          git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" hf-deploy:main

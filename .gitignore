@@ -1,4 +1,20 @@
-# Ignore virtual environments
-myenv/
+# Virtual environments
+.venv/
 venv/
 env/
+myenv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Secrets and OS files
+.env
+.DS_Store
+Thumbs.db
