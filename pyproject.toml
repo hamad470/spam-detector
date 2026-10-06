@@ -17,6 +17,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # so tests can import the app/ package, which isn't installed
 
 [tool.ruff]
 line-length = 110
