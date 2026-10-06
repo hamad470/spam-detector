@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMS Scam Detector</title>
+<meta name="description" content="Tells normal texts, marketing spam and smishing (SMS phishing) apart, and shows which words drove the decision. Runs entirely in your browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs",
+    "@huggingface/tokenizers": "https://cdn.jsdelivr.net/npm/@huggingface/tokenizers@0.2.0/dist/tokenizers.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <div>
+    <h1>SMS Scam Detector</h1>
+    <p class="sub">Tells normal texts, marketing spam and <strong>smishing</strong> (SMS phishing) apart, and shows which words drove the decision.</p>
+  </div>
+  <nav>
+    <a href="https://github.com/hamad470/spam-detector" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md" target="_blank" rel="noopener">Report</a>
+    <a href="https://huggingface.co/hamadurrehman62/sms-scam-distilroberta" target="_blank" rel="noopener">Model</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="card" id="loader" aria-live="polite">
+    <div class="load-row"><span id="load-text">Loading the model…</span><span id="load-pct" class="muted small"></span></div>
+    <div class="progress"><div id="load-bar"></div></div>
+    <p class="small muted">The model runs entirely in your browser, so messages you check never leave your device. It's an 82 MB download the first time; after that it's cached.</p>
+  </section>
+
+  <section class="card">
+    <label for="msg" class="label">Paste a text message</label>
+    <textarea id="msg" rows="4" maxlength="1000" placeholder="e.g. Royal Mail: your parcel is on hold due to an unpaid £1.99 fee. Pay now at royalmail-redelivery.com"></textarea>
+    <div class="row">
+      <div class="chips" id="examples">
+        <span class="muted small">Try:</span>
+        <button class="chip" data-text="Royal Mail: your parcel is on hold due to an unpaid £1.99 shipping fee. Pay now to avoid return: royalmail-redelivery-uk.com">Parcel fee</button>
+        <button class="chip" data-text="HMRC: You are eligible for a tax refund of £326.40. Claim now at hmrc-refund-gov.uk">Tax refund</button>
+        <button class="chip" data-text="Y0ur acc0unt has been l0cked. Ver1fy y0ur det4ils at secure-l0gin.net within 24hrs">Obfuscated</button>
+        <button class="chip" data-text="50% off all pizzas this weekend only! Order online with code WKND50. Txt STOP to opt out">Promo</button>
+        <button class="chip" data-text="Running 10 mins late, grab us a table and I'll be there soon">Friend</button>
+      </div>
+      <button id="go" class="primary" disabled>Check</button>
+    </div>
+  </section>
+
+  <section class="card result" id="result" hidden aria-live="polite">
+    <div class="verdict-row">
+      <span id="verdict" class="verdict"></span>
+      <span id="headline" class="prob"></span>
+    </div>
+    <div class="stack" id="stack" role="img"></div>
+    <div class="legend small" id="legend"></div>
+    <h3>Why</h3>
+    <p id="highlighted" class="highlighted"></p>
+    <ul id="evidence" class="evidence"></ul>
+    <p class="small muted">Each word is scored by removing it and measuring how far the scam log-odds move. Red words pushed towards scam and green words pushed away from it. <span id="timing"></span></p>
+  </section>
+
+  <section class="card" id="model-card">
+    <h2>Model card</h2>
+    <p class="muted" id="model-desc">Loading…</p>
+    <div class="tiles" id="tiles"></div>
+    <h3>How it compares (campaign-held-out test set)</h3>
+    <div class="table-wrap"><table class="cmp" id="cmp"></table></div>
+    <p class="small muted">Robustness is the share of scams still caught when 30% of words are obfuscated (leetspeak, look-alike characters, spacing and typos mixed together). The methodology, figures and error analysis are in the <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md" target="_blank" rel="noopener">report</a>.</p>
+  </section>
+</main>
+
+<footer class="wrap small muted">
+  Built by <a href="https://github.com/hamad470" target="_blank" rel="noopener">Hamad Ur Rehman</a>. Fine-tuned DistilRoBERTa, int8 ONNX, running on ONNX Runtime Web. Data: UCI SMS Spam Collection (2011) and Mishra &amp; Soni SMS Phishing Dataset (2022), both CC BY 4.0. A demo, not a security product: never trust a text just because a model said it was safe.
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

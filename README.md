@@ -8,7 +8,8 @@
 
 A classifier that tells normal texts, marketing spam and **smishing** (SMS phishing) apart, explains which
 words drove each decision, and holds up when scammers disguise their wording. It's a fine-tuned DistilRoBERTa,
-quantised to int8 ONNX, served by FastAPI on Hugging Face Spaces.
+quantised to int8 ONNX, that runs **entirely in your browser** with ONNX Runtime Web: messages you check never
+leave your device. The same model is also packaged as a FastAPI + Docker service for anyone who wants an API.
 
 **Live demo:** https://huggingface.co/spaces/hamadurrehman62/spam-detector
 **Full write-up:** [reports/REPORT.md](reports/REPORT.md)
@@ -59,7 +60,7 @@ More detail on every step, including the error analysis, calibration and an out-
 
 ## How it works
 
-![Architecture: offline data audit, grouped split, model ladder and ONNX export; online FastAPI service with occlusion explanations](docs/architecture.svg)
+![Architecture: offline data audit, grouped split, model ladder and ONNX export; online, the model runs in the visitor's browser with occlusion explanations](docs/architecture.svg)
 
 - **Data:** UCI 2011 + Mendeley 2022, encoding repaired with `ftfy`, exact and near-duplicates (MinHash LSH)
   grouped, then split by campaign with `StratifiedGroupKFold`.
@@ -70,15 +71,23 @@ More detail on every step, including the error analysis, calibration and an out-
   validation set calibrates the probabilities (ECE 0.008).
 - **Decision:** scam vs not-scam is decided first (P(spam) + P(smishing) ≥ 0.5), then which kind. Plain
   argmax can label a message "ham" while most of its probability says scam.
-- **Serving:** exported to ONNX and dynamically quantised to int8: 4× smaller and 5× faster, agreeing with the
-  PyTorch model on 99.5% of test messages. The service needs only `onnxruntime` and `tokenizers`, no PyTorch.
+- **Export:** ONNX, dynamically quantised to int8: 4× smaller and 5× faster, agreeing with the PyTorch model on
+  99.5% of test messages.
+- **In the browser:** the live demo is a static page. On the first visit it downloads the 82.5 MB model from the
+  Hugging Face Hub and caches it, then runs it with ONNX Runtime Web (WebAssembly). The normaliser, decision rule
+  and explanations are ported to JavaScript in [`web/scam.js`](web/scam.js), and a Node test suite checks the
+  port against the Python code on 254 messages: identical text normalisation and token IDs, identical labels,
+  median probability difference 0.0003. A check takes 0.4 to 1.2 s on a laptop, explanation included.
 - **Explanations:** occlusion. Each word is removed in turn, all variants are scored in one batch, and the
   change in scam log-odds is reported. This works for any model and is cheap at SMS length.
 
-## API
+## API (self-hosted)
+
+The live demo has no server, but the repo also ships a FastAPI service for using the model from other code:
 
 ```bash
-curl -X POST https://hamadurrehman62-spam-detector.hf.space/api/classify \
+docker build -t spam-detector . && docker run -p 7860:7860 spam-detector
+curl -X POST http://localhost:7860/api/classify \
   -H "Content-Type: application/json" \
   -d '{"text": "Y0ur acc0unt has been l0cked. Ver1fy y0ur det4ils at secure-l0gin.net"}'
 ```
@@ -119,16 +128,21 @@ python -m spam_detector.evaluate                       # trains the baselines, r
 python -m spam_detector.export                         # int8 ONNX + model card
 python -m spam_detector.figures
 pytest
+
+python -m spam_detector.web_fixtures                   # reference outputs for the browser port
+cd web && npm install && npm test                      # JavaScript vs Python parity
 ```
 
-To run only the web app, `pip install -r requirements.txt` and start
-`uvicorn app.main:app --port 7860`. It downloads the published model from the Hugging Face Hub on first start.
+To try the browser demo locally, serve `web/` with any static server (`python -m http.server -d web`). For the API
+instead, `pip install -r requirements.txt` and run `uvicorn app.main:app --port 7860`; it downloads the published
+model from the Hugging Face Hub on first start.
 
 ## Project structure
 
 ```
 spam-detector/
-├── app/                     FastAPI service and web UI (static HTML/CSS/JS)
+├── web/                     live demo: static page, scam.js (JS port), Node parity tests
+├── app/                     FastAPI service (self-hosted API + the same UI)
 ├── src/spam_detector/
 │   ├── datasets.py          download and load UCI, Mendeley, Enron
 │   ├── text.py              encoding repair, de-obfuscation, entity tags
@@ -141,13 +155,14 @@ spam-detector/
 │   ├── export.py            ONNX export, int8 quantisation, model card
 │   ├── inference.py         ONNX Runtime classifier + occlusion explanations
 │   ├── figures.py           every chart in this README and the report
-│   └── publish.py           upload model and card to the Hugging Face Hub
+│   ├── publish.py           upload model and card to the Hugging Face Hub
+│   └── web_fixtures.py      Python reference outputs for the JS parity tests
 ├── reports/                 REPORT.md, results.json, data_audit.json, figures/
 ├── notebooks/               the original 2024 exploratory notebook
 ├── data/README.md           data card and audit findings
-├── tests/                   unit tests and API tests
-├── Dockerfile               Hugging Face Spaces image
-└── .github/workflows/ci.yml lint, test, deploy to Spaces
+├── tests/                   Python unit and API tests
+├── Dockerfile               API image
+└── .github/workflows/ci.yml lint, Python + JS tests, publish the static Space
 ```
 
 ## Limitations
@@ -161,8 +176,9 @@ spam-detector/
   remaining errors are between those two classes. Ham vs not-ham is the reliable decision.
 - **It doesn't transfer to email.** On Enron-Spam every model sits between 0.55 and 0.61 ROC-AUC, close to
   chance.
-- **Single training run per configuration.** The augmented model's lead over the plain one is larger than the
-  bootstrap intervals, but I haven't averaged over seeds.
+- **Single training run per configuration.** The augmented model beats the plain one on most metrics (macro-F1
+  0.921 vs 0.870), but their bootstrap intervals overlap and I haven't averaged over seeds.
+- **First visit downloads 82.5 MB.** That's the cost of running without a server. It's cached afterwards.
 
 ## Data and credits
 

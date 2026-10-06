@@ -1,0 +1,13 @@
+{
+  "name": "spam-detector-web",
+  "private": true,
+  "description": "In-browser SMS scam detector (static Hugging Face Space). Dependencies are only for the Node parity tests; the page loads the same versions from a CDN.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/parity.test.mjs"
+  },
+  "devDependencies": {
+    "@huggingface/tokenizers": "0.2.0",
+    "onnxruntime-web": "1.30.0"
+  }
+}

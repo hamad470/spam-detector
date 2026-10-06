@@ -18,15 +18,25 @@ jobs:
       - run: pip install -r requirements-dev.txt && pip install --no-deps -e .
       - run: ruff check src app tests
       - run: ruff format --check src app tests
-      - name: Fetch the published model for the API tests
+      - name: Fetch the published model
         run: |
           python -c "from huggingface_hub import snapshot_download; \
           snapshot_download('hamadurrehman62/sms-scam-distilroberta', local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])" \
-          || echo "::warning::model not on the Hub yet, API tests will be skipped"
-      - run: pytest -q -rs
+          || echo "::warning::model not on the Hub yet, model tests will be skipped"
+      - name: Python tests
+        run: pytest -q -rs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Browser port matches Python
+        working-directory: web
+        run: npm ci && npm test
 
   deploy:
-    # Mirrors the serving files to a Hugging Face Docker Space, which rebuilds the image.
+    # Publishes web/ as a static Hugging Face Space. Static Spaces are free; the model itself
+    # is downloaded by the visitor's browser from the model repo.
     # Needs the HF_TOKEN secret (write token) and the HF_SPACE variable (e.g. "user/spam-detector").
     needs: test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -39,17 +49,18 @@ jobs:
       - name: Skip when Hugging Face is not configured
         if: env.HF_TOKEN == '' || env.HF_SPACE == ''
         run: echo "::warning::HF_TOKEN secret or HF_SPACE variable not set, skipping deploy"
-      - name: Push serving files to the Space
+      - name: Push the static site to the Space
         if: env.HF_TOKEN != '' && env.HF_SPACE != ''
         run: |
           pip install -q huggingface_hub
-          python -c "from huggingface_hub import create_repo; import os; create_repo(os.environ['HF_SPACE'], repo_type='space', space_sdk='docker', exist_ok=True, token=os.environ['HF_TOKEN'])"
-          # Spaces read their config from YAML front matter in README.md; keep it out of the GitHub README
-          { cat .github/hf-space-header.md; cat README.md; } > README.tmp && mv README.tmp README.md
-          rm -rf data notebooks tests reports docs .github
+          python -c "from huggingface_hub import create_repo; import os; create_repo(os.environ['HF_SPACE'], repo_type='space', space_sdk='static', exist_ok=True, token=os.environ['HF_TOKEN'])"
+          mkdir site
+          cp web/index.html web/style.css web/app.js web/scam.js site/
+          cp .github/hf-space-header.md site/README.md
+          cd site
+          git init -q -b main
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git checkout --orphan hf-deploy
           git add -A
           git commit -qm "Deploy ${GITHUB_SHA::7} from GitHub"
-          git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" hf-deploy:main
+          git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" main

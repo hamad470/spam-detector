@@ -1,7 +1,7 @@
 # Detecting SMS scams honestly: leakage, campaigns and obfuscation
 
 Hamad Ur Rehman · October 2026 · [code](https://github.com/hamad470/spam-detector) ·
-[demo](https://huggingface.co/spaces/hamadurrehman62/spam-detector) ·
+[live demo](https://huggingface.co/spaces/hamadurrehman62/spam-detector) ·
 [model](https://huggingface.co/hamadurrehman62/sms-scam-distilroberta)
 
 ## Summary
@@ -12,8 +12,8 @@ smishing). Most of the work turned out to be in the data and the evaluation, not
 - The 2022 smishing dataset I added is 85% copies of the 2011 dataset, and half of all spam comes from
   templated campaigns. A naive merge with a random split leaks exact copies of 78% of test messages into training.
 - With campaigns held out of training, the fine-tuned DistilRoBERTa reaches **0.920 macro-F1**, catches
-  **97.9% of scams**, flags **0.42% of real texts** and recalls **93.8% of smishing**. It's served as an
-  82.5 MB int8 ONNX model at 10 ms per message.
+  **97.9% of scams**, flags **0.42% of real texts** and recalls **93.8% of smishing**. It's an
+  82.5 MB int8 ONNX model that runs in the browser.
 - Training on obfuscated copies of messages helped more on clean data than I expected (macro-F1 0.870 to 0.921),
   and a rule-based normaliser does most of the work against disguised text.
 - The model doesn't generalise to email, and it misses scams that have no link, prize or number.
@@ -170,7 +170,25 @@ I exported the augmented model to ONNX and applied dynamic int8 quantisation:
 | Scam F1 | 0.975 | 0.979 |
 | Decisions that differ | | 4 of 851 (0.5%) |
 
-The serving image only needs `onnxruntime` and `tokenizers`. It runs on the free 2-vCPU Hugging Face Spaces tier.
+**Running it in the browser.** Hugging Face now charges for server-backed Spaces, so the live demo has no
+server: a static page downloads the int8 model once (cached afterwards) and runs it with ONNX Runtime Web. That
+meant porting the normaliser, the decision rule and the occlusion explanations to JavaScript, and I didn't want
+to trust a port by eye. `python -m spam_detector.web_fixtures` writes the Python outputs for 254 messages
+(test messages, attacked variants and edge cases such as full-width text, emoji, zero-width characters and a
+message longer than the 96-token limit), and a Node test suite checks the JavaScript against them:
+
+| Check | Result |
+|---|---|
+| Normalised text | identical on all 254 |
+| Token IDs, including truncation | identical on all 254 |
+| Final label | identical on all 254 |
+| Probabilities | median difference 0.0003, max 0.10 |
+| Strong explanation words (impact ≥ 0.5) | same words |
+
+The probabilities aren't bit-identical because WebAssembly and native ONNX Runtime round int8 matrix products
+differently. In the browser a check takes 0.4 to 1.2 s on a laptop, explanation included, and messages never
+leave the device. A FastAPI + Docker version of the same model stays in the repo for anyone who needs an API.
+
 If cost mattered more than smishing recall, TF-IDF + LR is the honest alternative: 70× smaller and 5× faster for
 about 2.5 points of macro-F1.
 
