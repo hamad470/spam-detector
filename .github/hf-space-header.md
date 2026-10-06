@@ -9,6 +9,6 @@ pinned: true
 license: mit
 short_description: Ham vs spam vs smishing, with word-level explanations
 models:
-  - hamad470/sms-scam-distilroberta
+  - hamadurrehman62/sms-scam-distilroberta
 ---
 

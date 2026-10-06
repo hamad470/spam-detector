@@ -6,7 +6,7 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    MODEL_REPO=hamad470/sms-scam-distilroberta
+    MODEL_REPO=hamadurrehman62/sms-scam-distilroberta
 WORKDIR /home/user/app
 
 COPY --chown=user requirements.txt .

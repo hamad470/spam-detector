@@ -13,3 +13,5 @@ reports
 docs
 tests
 *.egg-info
+token
+.env

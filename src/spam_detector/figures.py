@@ -13,6 +13,7 @@ from sklearn.calibration import calibration_curve
 from sklearn.metrics import precision_recall_curve
 
 from .paths import ARTIFACTS, FIGURES, LABELS, REPORTS
+from .paths import MODELS as MODELS_DIR
 
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e6e5e0"
 # Fixed slot per model so a colour always means the same model across figures
@@ -70,7 +71,7 @@ def data_audit(audit):
     ax.barh(["Mendeley 2022"], [copied], color="#86b6ef", height=0.5)
     ax.barh(["Mendeley 2022"], [new], left=[copied + 25], color="#2a78d6", height=0.5)
     ax.text(copied / 2, 0, f"{copied:,} already in UCI 2011", ha="center", va="center", color=INK)
-    ax.text(copied + new / 2 + 25, 0.42, f"{new} new", ha="center", color=INK)
+    ax.text(copied + new / 2 + 25, 0, f"{new}\nnew", ha="center", va="center", color="white")
     ax.set_title(f"{copied / (copied + new):.0%} of the 2022 dataset is the 2011 dataset")
     ax.set_xlabel("unique messages")
     ax.set_yticks([])
@@ -112,8 +113,8 @@ def leakage(results):
     colors = ["#cde2fb", "#86b6ef", "#2a78d6"]
     errors = [r[1]["f1_std"] for r in rows]
     ax.barh(y, vals, xerr=errors, color=colors, height=0.55, error_kw={"ecolor": INK_2, "capsize": 3})
-    for yi, v in zip(y, vals, strict=True):
-        ax.text(v + 0.004, yi, f"{v:.3f}", va="center", color=INK)
+    for yi, v, e in zip(y, vals, errors, strict=True):
+        ax.text(v + e + 0.002, yi, f"{v:.3f}", va="center", color=INK)
     ax.set_yticks(y, [r[0] for r in rows])
     ax.set_xlim(min(vals) - 0.05, 1.0)
     ax.set_xlabel("spam-vs-ham F1, same TF-IDF + LR model")
@@ -258,6 +259,20 @@ def tradeoff(results):
         label = f"{MODELS[n][0]}\n{r['size_mb']} MB"
         point = (r["latency_ms"], r["macro_f1"])
         ax.annotate(label, point, textcoords="offset points", xytext=(10, -4), fontsize=9, color=INK)
+    card_path = MODELS_DIR / "onnx" / "metrics.json"
+    if card_path.exists():  # the model that actually ships: same network, int8 ONNX
+        onnx = json.loads(card_path.read_text())["onnx"]
+        src = results["models"]["distilroberta_aug"]
+        point = (onnx["latency_ms"], onnx["test_macro_f1"])
+        ax.scatter(
+            *point, s=40 + onnx["onnx_size_mb"] * 3, facecolor=SURFACE, edgecolor="#2a78d6", lw=2.5, zorder=3
+        )
+        ax.annotate("", point, (src["latency_ms"], src["macro_f1"]),
+                    arrowprops={"arrowstyle": "->", "color": INK_2, "lw": 1})  # fmt: skip
+        label = f"deployed: int8 ONNX\n{onnx['onnx_size_mb']} MB"
+        ax.annotate(
+            label, point, textcoords="offset points", xytext=(16, -34), fontsize=9, color=INK, ha="left"
+        )
     ax.set_xscale("log")
     ax.set_xlabel("latency per message, ms (log scale, laptop CPU)")
     ax.set_ylabel("3-class macro-F1")

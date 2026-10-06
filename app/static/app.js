@@ -76,11 +76,12 @@ async function loadCard() {
   $("model-desc").textContent =
     `${MODEL_NAMES[c.final_model]}, quantised to int8 ONNX (${c.onnx.onnx_size_mb} MB). ` +
     `Tested on ${c.test_messages.toLocaleString()} messages from spam campaigns it never saw during training.`;
+  const o = c.onnx; // scores of the quantised model this page is actually running
   $("tiles").innerHTML = [
-    ["Macro-F1 (3 classes)", pct(m.macro_f1)],
-    ["Scams caught", pct(m.binary.recall)],
-    ["Smishing recall", pct(m.per_class.smishing.recall)],
-    ["Real texts flagged", pct(m.binary.ham_false_positive_rate, 2)],
+    ["Macro-F1 (3 classes)", pct(o.test_macro_f1)],
+    ["Scams caught", pct(o.test_scam_recall)],
+    ["Smishing recall", pct(o.test_smishing_recall)],
+    ["Real texts flagged", pct(o.test_ham_false_positive_rate, 2)],
     ["Robust @30% obfuscation", pct(m.robustness.mixed["0.3"])],
   ]
     .map(([k, v]) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`)

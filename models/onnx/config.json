@@ -4,7 +4,7 @@
     "spam",
     "smishing"
   ],
-  "temperature": 1.8996978998184204,
+  "temperature": 1.8707696199417114,
   "max_len": 96,
   "base_model": "distilroberta-base",
   "trained_variant": "distilroberta_aug"

@@ -1,7 +1,7 @@
 """Upload the exported ONNX model and its model card to the Hugging Face Hub.
 
 hf auth login                       # once, with a write token
-python -m spam_detector.publish --repo hamad470/sms-scam-distilroberta
+python -m spam_detector.publish --repo hamadurrehman62/sms-scam-distilroberta
 """
 
 import argparse
@@ -29,7 +29,7 @@ characters, spaced-out letters, typos), temperature-scaled on a validation set, 
 to ONNX and dynamically quantised to int8 ({size} MB).
 
 Code, data audit and full evaluation: https://github.com/hamad470/spam-detector
-Live demo: https://huggingface.co/spaces/hamad470/spam-detector
+Live demo: https://huggingface.co/spaces/hamadurrehman62/spam-detector
 
 ## Results
 
@@ -69,7 +69,7 @@ UCI SMS Spam Collection (Almeida & Gómez Hidalgo, 2011) and SMS Phishing Datase
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--repo", default="hamad470/sms-scam-distilroberta")
+    p.add_argument("--repo", default="hamadurrehman62/sms-scam-distilroberta")
     args = p.parse_args()
 
     folder = MODELS / "onnx"

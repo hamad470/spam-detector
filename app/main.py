@@ -17,7 +17,7 @@ from spam_detector.paths import MODELS
 
 STATIC_DIR = Path(__file__).parent / "static"
 MODEL_DIR = Path(os.getenv("MODEL_DIR", MODELS / "onnx"))
-MODEL_REPO = os.getenv("MODEL_REPO", "hamad470/sms-scam-distilroberta")
+MODEL_REPO = os.getenv("MODEL_REPO", "hamadurrehman62/sms-scam-distilroberta")
 MAX_CHARS = 1000  # an SMS is 160 chars; long-form text is out of distribution anyway
 
 

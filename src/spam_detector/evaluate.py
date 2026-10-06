@@ -9,6 +9,7 @@ test split unless stated otherwise.
 
 import json
 import time
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -93,6 +94,12 @@ def load_models(train: pd.DataFrame) -> dict:
 def size_mb(name: str) -> float:
     path = ARTIFACTS / name
     files = [path / "model.safetensors"] if path.is_dir() else [path.with_suffix(".joblib")]
+    if name == "minilm_lr":  # the pickled LR is tiny; the frozen encoder is what has to ship
+        from huggingface_hub import try_to_load_from_cache
+
+        from .models.embeddings import ENCODER
+
+        files.append(Path(try_to_load_from_cache(ENCODER, "model.safetensors")))
     return round(sum(f.stat().st_size for f in files if f.exists()) / 1e6, 1)
 
 

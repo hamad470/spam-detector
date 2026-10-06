@@ -15,7 +15,9 @@ import numpy as np
 import pandas as pd
 import torch
 from onnxruntime.quantization import QuantType, quantize_dynamic
+from sklearn.metrics import f1_score, recall_score
 
+from .decision import decide
 from .models.transformer import DistilRobertaClassifier
 from .paths import ARTIFACTS, LABELS, MODELS, PROCESSED, REPORTS
 
@@ -59,13 +61,24 @@ def check_agreement(name: str) -> dict:
     from .inference import ScamClassifier
 
     df = pd.read_parquet(PROCESSED / "corpus.parquet")
-    texts = df[(df.split == "test") & df.label.isin(LABELS)].text.tolist()
+    test = df[(df.split == "test") & df.label.isin(LABELS)]
+    texts = test.text.tolist()
     torch_p = DistilRobertaClassifier(ARTIFACTS / name).predict_proba(texts)
     onnx_p = ScamClassifier(MODELS / "onnx").predict_proba(texts)
+
+    # Score the quantised model itself: it's what the demo serves
+    y = np.array([LABELS.index(label) for label in test.label])
+    pred = decide(onnx_p)
+    is_scam, flagged = y > 0, pred > 0
     return {
-        "argmax_agreement": round(float((torch_p.argmax(1) == onnx_p.argmax(1)).mean()), 4),
+        "argmax_agreement": round(float((decide(torch_p) == pred).mean()), 4),
         "max_abs_prob_diff": round(float(np.abs(torch_p - onnx_p).max()), 4),
         "onnx_size_mb": round((MODELS / "onnx" / "model.onnx").stat().st_size / 1e6, 1),
+        "test_macro_f1": round(f1_score(y, pred, average="macro"), 4),
+        "test_scam_f1": round(f1_score(is_scam, flagged), 4),
+        "test_scam_recall": round(recall_score(is_scam, flagged), 4),
+        "test_ham_false_positive_rate": round(float(flagged[~is_scam].mean()), 4),
+        "test_smishing_recall": round(recall_score(y == 2, pred == 2), 4),
     }
 
 

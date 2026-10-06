@@ -21,7 +21,7 @@ jobs:
       - name: Fetch the published model for the API tests
         run: |
           python -c "from huggingface_hub import snapshot_download; \
-          snapshot_download('hamad470/sms-scam-distilroberta', local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])" \
+          snapshot_download('hamadurrehman62/sms-scam-distilroberta', local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])" \
           || echo "::warning::model not on the Hub yet, API tests will be skipped"
       - run: pytest -q -rs
 

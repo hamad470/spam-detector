@@ -25,3 +25,7 @@ models/onnx/tokenizer.json
 .env
 .DS_Store
 Thumbs.db
+
+# Never commit credentials
+token/
+*token*.txt
