@@ -1,40 +1,67 @@
 {
   "raw": {
     "uci_2011": 5572,
-    "mendeley_2022": 5971
+    "mendeley_2022": 5971,
+    "exais_2014": 5240,
+    "enron": 33716,
+    "spamassassin": 6046,
+    "nazario": 6197
   },
-  "mendeley_exact_duplicates": 146,
-  "mendeley_duplicates_with_conflicting_labels": 35,
-  "uci_exact_duplicates": 447,
-  "mendeley_rows_copied_from_uci": 4942,
+  "mendeley_rows_copied_from_uci": 4943,
   "mendeley_rows_genuinely_new": 881,
-  "near_duplicate_clusters": {
-    "messages": 6006,
-    "clusters": 5428,
-    "messages_in_multi_message_clusters": 876,
-    "share_of_ham_in_clusters": 0.069,
-    "share_of_spam_or_smishing_in_clusters": 0.509
+  "dropped_non_english": {
+    "enron": 16,
+    "nazario": 83,
+    "spamassassin": 53
   },
-  "campaign_clusters_labelled_both_spam_and_smishing": 23,
-  "campaign_clusters_with_spam_or_smishing": 652,
+  "exact_duplicates": 7007,
+  "duplicates_with_conflicting_labels": 87,
+  "campaigns": {
+    "sms_legit_share_in_campaign": 0.121,
+    "sms_spam_share_in_campaign": 0.267,
+    "sms_phishing_share_in_campaign": 0.621,
+    "email_legit_share_in_campaign": 0.147,
+    "email_spam_share_in_campaign": 0.384,
+    "email_phishing_share_in_campaign": 0.448
+  },
+  "campaigns_labelled_both_spam_and_phishing": 66,
   "final": {
-    "train": {
-      "ham": 3543,
-      "smishing": 402,
-      "spam": 309,
-      "spam_unlabelled": 25
+    "future/email": {
+      "phishing": 1192
     },
-    "val": {
-      "ham": 709,
-      "smishing": 80,
-      "spam": 62,
-      "spam_unlabelled": 6
+    "test/email": {
+      "legit": 2808,
+      "spam": 2275,
+      "phishing": 492
     },
-    "test": {
-      "ham": 709,
-      "smishing": 80,
-      "spam": 62,
-      "spam_unlabelled": 19
+    "test/sms": {
+      "legit": 1034,
+      "spam": 266,
+      "phishing": 80,
+      "spam_unlabelled": 15
+    },
+    "train/email": {
+      "legit": 14042,
+      "spam": 11370,
+      "phishing": 2457
+    },
+    "train/sms": {
+      "legit": 5172,
+      "spam": 1328,
+      "phishing": 401,
+      "spam_unlabelled": 24
+    },
+    "val/email": {
+      "legit": 2808,
+      "spam": 2274,
+      "phishing": 491
+    },
+    "val/sms": {
+      "legit": 1034,
+      "spam": 266,
+      "phishing": 81,
+      "spam_unlabelled": 11
     }
-  }
+  },
+  "future_novel": 1153
 }

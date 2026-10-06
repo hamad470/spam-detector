@@ -2,6 +2,10 @@
 
 nb_original  - the pipeline from my first notebook (stemmed words, TF-IDF, chi2, Bernoulli NB)
 tfidf_lr     - word and character n-grams + logistic regression, with obfuscation undone first
+
+Every model takes raw texts plus each text's channel ("sms" or "email") and sees them
+through text.prepare(), so email clean-up and the channel prefix are applied the same way
+for every model.
 """
 
 import numpy as np
@@ -16,23 +20,28 @@ from sklearn.preprocessing import FunctionTransformer
 from ..decision import decide
 from ..paths import LABELS
 from ..preprocess import clean_texts
-from ..text import prepare, tag_entities
+from ..text import prepare
+
+
+def prepare_all(texts, domains, deobfuscate: bool = True) -> list[str]:
+    return [prepare(t, d, deobfuscate=deobfuscate) for t, d in zip(texts, domains, strict=True)]
+
+
+def encode_labels(labels) -> np.ndarray:
+    return np.array([LABELS.index(label) for label in labels])
 
 
 class _Base:
     name = "base"
 
-    def predict_proba(self, texts) -> np.ndarray:
-        return self.model.predict_proba(list(texts))
-
-    def predict(self, texts) -> np.ndarray:
-        return np.array(LABELS)[decide(self.predict_proba(texts))]
+    def predict(self, texts, domains) -> np.ndarray:
+        return np.array(LABELS)[decide(self.predict_proba(texts, domains))]
 
 
 class NBOriginal(_Base):
     name = "nb_original"
 
-    def fit(self, texts, labels):
+    def fit(self, texts, domains, labels):
         self.model = Pipeline(
             [
                 ("clean", FunctionTransformer(clean_texts)),
@@ -41,38 +50,35 @@ class NBOriginal(_Base):
                 ("clf", BernoulliNB()),
             ]
         )
-        self.model.fit(list(texts), _encode(labels))
+        self.model.fit(prepare_all(texts, domains), encode_labels(labels))
         return self
+
+    def predict_proba(self, texts, domains):
+        return self.model.predict_proba(prepare_all(texts, domains))
 
 
 class TfidfLR(_Base):
     name = "tfidf_lr"
 
-    def __init__(self, C: float = 10.0, normalise_input: bool = True):
+    def __init__(self, C: float = 10.0, deobfuscate: bool = True):
         self.C = C
-        self.normalise_input = normalise_input
+        self.deobfuscate = deobfuscate
 
-    def _prep(self, texts):
-        return [prepare(t) if self.normalise_input else tag_entities(t) for t in texts]
-
-    def fit(self, texts, labels):
-        self.word = TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True, lowercase=True)
-        self.char = TfidfVectorizer(
-            analyzer="char_wb", ngram_range=(2, 5), min_df=2, sublinear_tf=True, max_features=60_000
-        )
-        x = self._prep(texts)
-        X = hstack([self.word.fit_transform(x), self.char.fit_transform(x)]).tocsr()
-        self.clf = LogisticRegression(C=self.C, max_iter=3000, class_weight="balanced")
-        self.clf.fit(X, _encode(labels))
-        return self
-
-    def _features(self, texts):
-        x = self._prep(texts)
+    def _features(self, texts, domains, fit=False):
+        x = prepare_all(texts, domains, self.deobfuscate)
+        if fit:
+            self.word = TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True, max_features=300_000)
+            self.char = TfidfVectorizer(
+                analyzer="char_wb", ngram_range=(2, 5), min_df=3, sublinear_tf=True, max_features=150_000
+            )
+            return hstack([self.word.fit_transform(x), self.char.fit_transform(x)]).tocsr()
         return hstack([self.word.transform(x), self.char.transform(x)]).tocsr()
 
-    def predict_proba(self, texts):
-        return self.clf.predict_proba(self._features(list(texts)))
+    def fit(self, texts, domains, labels):
+        X = self._features(texts, domains, fit=True)
+        self.clf = LogisticRegression(C=self.C, max_iter=3000, class_weight="balanced")
+        self.clf.fit(X, encode_labels(labels))
+        return self
 
-
-def _encode(labels) -> np.ndarray:
-    return np.array([LABELS.index(label) for label in labels])
+    def predict_proba(self, texts, domains):
+        return self.clf.predict_proba(self._features(texts, domains))

@@ -37,7 +37,12 @@ def dedup_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", fix_encoding(text).lower())
 
 
+_EMAIL_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
 def _deleet(token: str) -> str:
+    if _EMAIL_TOKEN.search(token):  # '@' is leetspeak for 'a', but not inside an address
+        return token
     has_alpha = any(c.isalpha() for c in token)
     mostly_digits = sum(c.isdigit() for c in token) > len(token) / 2
     return token.translate(_LEET) if has_alpha and not mostly_digits else token
@@ -57,9 +62,14 @@ def normalise(text: str) -> str:
 # Scam texts lean on links, phone numbers and money. Tagging them gives every
 # model a feature that doesn't depend on the exact number or domain.
 _TAGS = [
-    (re.compile(r"(https?://|www\.)\S+|\b\S+\.(com|co\.uk|net|ly|info|biz)\b", re.I), " xxurl "),
+    (re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+"), " xxemail "),
+    (
+        re.compile(r"(https?://|www\.)\S+|\b\S+\.(com|co\.uk|net|org|ly|info|biz|io|xyz|top)\b", re.I),
+        " xxurl ",
+    ),
     (re.compile(r"\+?\d[\d\s-]{7,}\d"), " xxphone "),
-    (re.compile(r"[£$€]\s?\d[\d,.]*|\d[\d,.]*\s?(pounds|gbp|usd)\b", re.I), " xxmoney "),
+    (re.compile(r"[£$€]\s?\d[\d,.]*|\d[\d,.]*\s?([£$€]|pounds\b|gbp\b|usd\b|dollars\b)", re.I), " xxmoney "),
+    (re.compile(r"\b(19[89]\d|20[0-3]\d)\b"), " xxyear "),
 ]
 
 
@@ -69,5 +79,37 @@ def tag_entities(text: str) -> str:
     return text
 
 
-def prepare(text: str) -> str:
-    return tag_entities(normalise(text))
+# ---- Email-specific clean-up ----------------------------------------------
+# Found by the shortcut audit (reports/shortcut_audit.json): without these, a model can tell
+# which corpus an email came from, and each corpus carries a single label.
+
+# Enron-Spam ships lower-cased with spaces around punctuation ("price , only 15 $ !").
+_SPACE_BEFORE = re.compile(r"\s+([,.;:!?%)\]}'])")
+_SPACE_AFTER = re.compile(r"([(\[{$£€])\s+")
+# Mailing-list tags and footers: SpamAssassin's legitimate mail is mostly tech mailing lists.
+_LIST_TAG = re.compile(r"^(subject:\s*)((re|fwd?):\s*)*\[[^\]]{2,30}\]\s*", re.I | re.M)
+_LIST_FOOTER = re.compile(
+    r"^.*(mailman/listinfo|mailing list|list-unsubscribe|_{20,}|-{20,}).*$", re.I | re.M
+)
+# The people and organisation each corpus belongs to.
+_IDENTITY = re.compile(r"\b(jose|monkey|nazario|enron|kaminski|vince|ect|hou)\b", re.I)
+
+
+def scrub_email(text: str) -> str:
+    text = _EMAIL_TOKEN.sub(" xxemail ", text)  # before identity masking, which would split addresses
+    text = _LIST_FOOTER.sub(" ", _LIST_TAG.sub(r"\1", text))
+    text = text.lower()
+    text = _SPACE_AFTER.sub(r"\1", _SPACE_BEFORE.sub(r"\1", text))
+    return _IDENTITY.sub(" ", text)  # deleted, not tagged: a tag would only ever appear in one corpus
+
+
+def prepare(text: str, domain: str = "sms", deobfuscate: bool = True) -> str:
+    """The exact string a model sees. The browser port in web/scam.js must match this.
+
+    deobfuscate=False exists only for the ablation that measures what normalise() buys.
+    """
+    if deobfuscate:
+        text = normalise(text)
+    if domain == "email":
+        text = scrub_email(text)
+    return f"[{domain}] " + " ".join(tag_entities(text).split())

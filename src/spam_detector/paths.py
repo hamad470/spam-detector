@@ -8,4 +8,5 @@ MODELS = ROOT / "models"  # small, committed serving artefacts
 REPORTS = ROOT / "reports"
 FIGURES = REPORTS / "figures"
 
-LABELS = ["ham", "spam", "smishing"]
+LABELS = ["legit", "spam", "phishing"]
+DOMAINS = ["sms", "email"]

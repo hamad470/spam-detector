@@ -1,8 +1,8 @@
 """Serving-time classifier: ONNX Runtime + tokenizers, no PyTorch.
 
 Explanations are by occlusion: drop one word, re-score, and see how far the
-scam probability moves. It's model-agnostic and cheap for SMS-length text,
-because every variant fits in one batch.
+scam probability moves. It's model-agnostic and cheap at message length. For
+emails only the first 60 words are explained, which is where the hook usually is.
 """
 
 import json
@@ -29,7 +29,7 @@ def _log_odds(p: float, eps: float = 1e-6) -> float:
 class Result:
     label: str
     probabilities: dict[str, float]
-    scam_probability: float  # P(spam) + P(smishing)
+    scam_probability: float  # P(spam) + P(phishing)
     evidence: list[dict] = field(default_factory=list)
 
 
@@ -38,8 +38,8 @@ class ScamClassifier:
         model_dir = Path(model_dir)
         self.config = json.loads((model_dir / "config.json").read_text())
         self.labels = self.config["labels"]
+        self.max_len = self.config["max_len"]  # per channel, e.g. {"sms": 96, "email": 256}
         self.tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
-        self.tokenizer.enable_truncation(self.config["max_len"])
         self.tokenizer.enable_padding(pad_id=self.tokenizer.token_to_id("<pad>"), pad_token="<pad>")
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = 2  # free Spaces get 2 vCPUs
@@ -47,7 +47,8 @@ class ScamClassifier:
             str(model_dir / "model.onnx"), opts, providers=["CPUExecutionProvider"]
         )
 
-    def _probs(self, prepared: list[str]) -> np.ndarray:
+    def _probs(self, prepared: list[str], domain: str) -> np.ndarray:
+        self.tokenizer.enable_truncation(self.max_len[domain])
         enc = self.tokenizer.encode_batch(prepared)
         feed = {
             "input_ids": np.array([e.ids for e in enc], dtype=np.int64),
@@ -57,29 +58,36 @@ class ScamClassifier:
         z -= z.max(axis=1, keepdims=True)
         return np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
 
-    def predict_proba(self, texts) -> np.ndarray:
-        texts = list(texts)
-        return np.concatenate(
-            [self._probs([prepare(t) for t in texts[i : i + 32]]) for i in range(0, len(texts), 32)]
-        )
+    def predict_proba(self, texts, domains) -> np.ndarray:
+        texts, domains = list(texts), list(domains)
+        out = np.zeros((len(texts), len(self.labels)), dtype=np.float32)
+        for d in set(domains):
+            idx = [i for i, x in enumerate(domains) if x == d]
+            for start in range(0, len(idx), 32):
+                chunk = idx[start : start + 32]
+                out[chunk] = self._probs([prepare(texts[i], d) for i in chunk], d)
+        return out
 
-    def classify(self, text: str, explain: bool = True, top_k: int = 6) -> Result:
-        p = self.predict_proba([text])[0]
+    def classify(self, text: str, domain: str = "sms", explain: bool = True, top_k: int = 6) -> Result:
+        p = self.predict_proba([text], [domain])[0]
         result = Result(
             label=self.labels[int(decide(p[None])[0])],
             probabilities={k: round(float(v), 4) for k, v in zip(self.labels, p, strict=True)},
             scam_probability=round(float(p[1:].sum()), 4),
         )
         if explain:
-            result.evidence = self._occlusion(text, float(p[1:].sum()), top_k)
+            result.evidence = self._occlusion(text, domain, float(p[1:].sum()), top_k)
         return result
 
-    def _occlusion(self, text: str, base: float, top_k: int) -> list[dict]:
+    def _occlusion(self, text: str, domain: str, base: float, top_k: int) -> list[dict]:
         spans = [m.span() for m in _WORD.finditer(text)][:60]
         if len(spans) < 2:
             return []
-        variants = [prepare(text[:a] + text[b:]) for a, b in spans]
-        scores = self._probs(variants)[:, 1:].sum(axis=1)
+        variants = [prepare(text[:a] + text[b:], domain) for a, b in spans]
+        scores = np.concatenate(
+            [self._probs(variants[i : i + 16], domain) for i in range(0, len(variants), 16)]
+        )
+        scores = scores[:, 1:].sum(axis=1)
         # Work in log-odds: near p=0.999 every single word looks unimportant in probability terms
         base_lo = _log_odds(base)
         evidence = [
