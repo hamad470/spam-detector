@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" role="img" aria-label="System architecture: offline, two SMS datasets are repaired, de-duplicated, grouped into campaigns and split; five models are trained and evaluated; the fine-tuned DistilRoBERTa is calibrated, exported to int8 ONNX and is the only artefact deployed. Online, a FastAPI service on Hugging Face Spaces normalises the message, runs ONNX Runtime and explains the decision by occlusion." font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+    <marker id="arrb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="560" rx="14" fill="#fcfcfb"/>
+
+  <!-- lanes -->
+  <rect x="16" y="16" width="1088" height="292" rx="10" fill="#f4f3ef"/>
+  <text x="32" y="40" font-size="13" font-weight="600" fill="#0b0b0b">OFFLINE  ·  reproducible CLI on a laptop CPU</text>
+  <rect x="16" y="356" width="1088" height="188" rx="10" fill="#eef4fc"/>
+  <text x="32" y="380" font-size="13" font-weight="600" fill="#0b0b0b">ONLINE  ·  Docker on Hugging Face Spaces (2 vCPU, free tier)</text>
+
+  <!-- sources -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="32" y="62" width="150" height="50" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="107" y="83" text-anchor="middle" font-weight="600">UCI SMS 2011</text>
+    <text x="107" y="100" text-anchor="middle" fill="#52514e">5,572 · ham / spam</text>
+    <rect x="32" y="124" width="150" height="50" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="107" y="145" text-anchor="middle" font-weight="600">Mendeley 2022</text>
+    <text x="107" y="162" text-anchor="middle" fill="#52514e">5,971 · + smishing</text>
+    <rect x="32" y="186" width="150" height="50" rx="8" fill="#fff" stroke="#c9c8c1" stroke-dasharray="4 3"/>
+    <text x="107" y="207" text-anchor="middle" font-weight="600">Enron-Spam email</text>
+    <text x="107" y="224" text-anchor="middle" fill="#52514e">test only</text>
+  </g>
+
+  <!-- audit / split -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="238" y="62" width="208" height="174" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="342" y="84" text-anchor="middle" font-weight="600">build_dataset</text>
+    <text x="254" y="110" fill="#52514e">1  repair mojibake (ftfy)</text>
+    <text x="254" y="132" fill="#52514e">2  exact de-dup across sets</text>
+    <text x="254" y="154" fill="#52514e">3  MinHash campaign clusters</text>
+    <text x="254" y="176" fill="#52514e">4  split by cluster 70/15/15</text>
+    <text x="342" y="214" text-anchor="middle" font-size="11" fill="#2a78d6">no campaign in both train and test</text>
+  </g>
+  <line x1="182" y1="87" x2="234" y2="120" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="182" y1="149" x2="234" y2="149" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- training -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="500" y="62" width="216" height="174" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="608" y="84" text-anchor="middle" font-weight="600">model ladder</text>
+    <text x="516" y="110" fill="#52514e">Naive Bayes (original)</text>
+    <text x="516" y="132" fill="#52514e">TF-IDF word+char + LR</text>
+    <text x="516" y="154" fill="#52514e">MiniLM embeddings + LR</text>
+    <text x="516" y="176" fill="#52514e">DistilRoBERTa</text>
+    <text x="516" y="198" fill="#0b0b0b" font-weight="600">DistilRoBERTa + attack aug.</text>
+    <text x="608" y="222" text-anchor="middle" font-size="11" fill="#52514e">normalise · tag url/phone/£</text>
+  </g>
+  <line x1="446" y1="149" x2="496" y2="149" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="471" y="140" text-anchor="middle" font-size="11" fill="#52514e">train</text>
+
+  <!-- evaluation -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="770" y="62" width="318" height="96" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="929" y="84" text-anchor="middle" font-weight="600">evaluate</text>
+    <text x="786" y="108" fill="#52514e">held-out campaigns · bootstrap 95% CIs</text>
+    <text x="786" y="128" fill="#52514e">5 obfuscation attacks · email transfer</text>
+    <text x="786" y="148" fill="#52514e">calibration · latency · leakage study</text>
+  </g>
+  <line x1="716" y1="110" x2="766" y2="110" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="741" y="101" text-anchor="middle" font-size="11" fill="#52514e">score</text>
+  <path d="M182,211 L210,211 L210,266 L1096,266 L1096,110 L1092,110" fill="none" stroke="#52514e" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text x="560" y="284" text-anchor="middle" font-size="11" fill="#52514e">email set, scored but never trained on</text>
+
+  <!-- export -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="770" y="178" width="318" height="58" rx="8" fill="#fff" stroke="#2a78d6" stroke-width="1.5"/>
+    <text x="929" y="200" text-anchor="middle" font-weight="600">temperature scaling → ONNX → int8</text>
+    <text x="929" y="220" text-anchor="middle" fill="#52514e">PyTorch 330 MB → ONNX Runtime ~80 MB</text>
+  </g>
+  <path d="M716,198 L766,205" fill="none" stroke="#2a78d6" stroke-width="1.5" marker-end="url(#arrb)"/>
+  <text x="741" y="192" text-anchor="middle" font-size="11" fill="#2a78d6">final</text>
+
+  <!-- boundary -->
+  <line x1="16" y1="332" x2="1104" y2="332" stroke="#9c9b94" stroke-width="1" stroke-dasharray="6 5"/>
+  <text x="32" y="326" font-size="11" fill="#52514e">GitHub Actions: lint + tests (incl. quality gate) → push to Space</text>
+  <line x1="929" y1="236" x2="929" y2="428" stroke="#2a78d6" stroke-width="2" marker-end="url(#arrb)"/>
+  <rect x="940" y="318" width="152" height="28" rx="6" fill="#fcfcfb" stroke="#2a78d6"/>
+  <text x="1016" y="336" text-anchor="middle" font-size="11" fill="#2a78d6">model.onnx + tokenizer.json</text>
+
+  <!-- online request path -->
+  <g font-size="12" fill="#0b0b0b">
+    <rect x="32" y="400" width="140" height="56" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="102" y="423" text-anchor="middle" font-weight="600">browser / client</text>
+    <text x="102" y="441" text-anchor="middle" fill="#52514e">web UI or curl</text>
+
+    <rect x="232" y="400" width="150" height="56" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="307" y="423" text-anchor="middle" font-weight="600">FastAPI</text>
+    <text x="307" y="441" text-anchor="middle" fill="#52514e">validate · route</text>
+
+    <rect x="442" y="400" width="170" height="56" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="527" y="423" text-anchor="middle" font-weight="600">prepare()</text>
+    <text x="527" y="441" text-anchor="middle" fill="#52514e">un-obfuscate · tag entities</text>
+
+    <rect x="672" y="400" width="170" height="56" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="757" y="423" text-anchor="middle" font-weight="600">tokenizer</text>
+    <text x="757" y="441" text-anchor="middle" fill="#52514e">BPE, max 96 tokens</text>
+
+    <rect x="880" y="400" width="208" height="56" rx="8" fill="#fff" stroke="#2a78d6" stroke-width="1.5"/>
+    <text x="984" y="423" text-anchor="middle" font-weight="600">ONNX Runtime</text>
+    <text x="984" y="441" text-anchor="middle" fill="#52514e">logits ÷ T → softmax</text>
+
+    <rect x="442" y="478" width="400" height="50" rx="8" fill="#fff" stroke="#c9c8c1"/>
+    <text x="642" y="499" text-anchor="middle" font-weight="600">occlusion explainer</text>
+    <text x="642" y="516" text-anchor="middle" fill="#52514e">drop each word, re-score all variants in one batch, Δ log-odds</text>
+  </g>
+  <line x1="172" y1="420" x2="228" y2="420" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="200" y="412" text-anchor="middle" font-size="11" fill="#52514e">POST</text>
+  <line x1="382" y1="428" x2="438" y2="428" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="612" y1="428" x2="668" y2="428" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="842" y1="428" x2="876" y2="428" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <path d="M984,456 L984,503 L846,503" fill="none" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="992" y="486" font-size="11" fill="#52514e">p(scam)</text>
+  <path d="M442,503 L102,503 L102,460" fill="none" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="272" y="495" text-anchor="middle" font-size="11" fill="#52514e">label · probabilities · evidence words</text>
+</svg>

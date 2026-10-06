@@ -1,0 +1,40 @@
+{
+  "raw": {
+    "uci_2011": 5572,
+    "mendeley_2022": 5971
+  },
+  "mendeley_exact_duplicates": 146,
+  "mendeley_duplicates_with_conflicting_labels": 35,
+  "uci_exact_duplicates": 447,
+  "mendeley_rows_copied_from_uci": 4942,
+  "mendeley_rows_genuinely_new": 881,
+  "near_duplicate_clusters": {
+    "messages": 6006,
+    "clusters": 5428,
+    "messages_in_multi_message_clusters": 876,
+    "share_of_ham_in_clusters": 0.069,
+    "share_of_spam_or_smishing_in_clusters": 0.509
+  },
+  "campaign_clusters_labelled_both_spam_and_smishing": 23,
+  "campaign_clusters_with_spam_or_smishing": 652,
+  "final": {
+    "train": {
+      "ham": 3543,
+      "smishing": 402,
+      "spam": 309,
+      "spam_unlabelled": 25
+    },
+    "val": {
+      "ham": 709,
+      "smishing": 80,
+      "spam": 62,
+      "spam_unlabelled": 6
+    },
+    "test": {
+      "ham": 709,
+      "smishing": 80,
+      "spam": 62,
+      "spam_unlabelled": 19
+    }
+  }
+}

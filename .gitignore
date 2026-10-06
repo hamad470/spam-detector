@@ -14,6 +14,13 @@ dist/
 .ruff_cache/
 .ipynb_checkpoints/
 
+# Data and models: rebuilt by the pipeline (see README), large files live on the Hugging Face Hub
+data/raw/
+data/processed/
+artifacts/
+models/onnx/model.onnx
+models/onnx/tokenizer.json
+
 # Secrets and OS files
 .env
 .DS_Store

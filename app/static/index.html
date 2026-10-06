@@ -3,71 +3,66 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SMS Spam Detector</title>
-<meta name="description" content="Explainable SMS spam classifier: TF-IDF, chi-squared selection and Bernoulli Naive Bayes served with FastAPI.">
+<title>SMS Scam Detector</title>
+<meta name="description" content="Separates normal texts, marketing spam and smishing (SMS phishing), and shows which words drove the decision.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="wrap top">
   <div>
-    <h1>SMS Spam Detector</h1>
-    <p class="sub">Paste a message and the model returns a spam probability, plus the words that drove the decision.</p>
+    <h1>SMS Scam Detector</h1>
+    <p class="sub">Tells normal texts, marketing spam and <strong>smishing</strong> (SMS phishing) apart, and shows which words drove the decision.</p>
   </div>
   <nav>
     <a href="https://github.com/hamad470/spam-detector" target="_blank" rel="noopener">GitHub</a>
-    <a href="/docs" target="_blank">API docs</a>
+    <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md" target="_blank" rel="noopener">Report</a>
+    <a href="/docs" target="_blank">API</a>
   </nav>
 </header>
 
 <main class="wrap">
   <section class="card">
-    <label for="msg" class="label">Message</label>
-    <textarea id="msg" rows="5" maxlength="5000" placeholder="e.g. Congratulations! You've won a £1000 voucher. Text CLAIM to 80086 now"></textarea>
+    <label for="msg" class="label">Paste a text message</label>
+    <textarea id="msg" rows="4" maxlength="1000" placeholder="e.g. Royal Mail: your parcel is on hold due to an unpaid £1.99 fee. Pay now at royalmail-redelivery.com"></textarea>
     <div class="row">
       <div class="chips" id="examples">
         <span class="muted small">Try:</span>
-        <button class="chip" data-text="URGENT! Your mobile number has won a £2000 prize. To claim call 09061790121 now. T&Cs apply">Prize scam</button>
-        <button class="chip" data-text="FREE entry into our weekly comp! Text WIN to 80086 to receive your free ringtone. Txt STOP to opt out">Promo text</button>
-        <button class="chip" data-text="Hey, are we still on for dinner tonight? I'll be there around 7">Friend</button>
-        <button class="chip" data-text="Can you send me the slides from today's lecture when you get a chance? Thanks">Classmate</button>
+        <button class="chip" data-text="Royal Mail: your parcel is on hold due to an unpaid £1.99 shipping fee. Pay now to avoid return: royalmail-redelivery-uk.com">Parcel fee</button>
+        <button class="chip" data-text="HSBC: A new payee was added to your account. If this was NOT you, call our fraud team immediately on 07418 355612">Bank alert</button>
+        <button class="chip" data-text="Y0ur acc0unt has been l0cked. Ver1fy y0ur det4ils at secure-l0gin.net within 24hrs">Obfuscated</button>
+        <button class="chip" data-text="50% off all pizzas this weekend only! Order online with code WKND50. Txt STOP to opt out">Promo</button>
+        <button class="chip" data-text="Running 10 mins late, grab us a table and I'll be there soon">Friend</button>
       </div>
-      <button id="go" class="primary">Analyse</button>
+      <button id="go" class="primary">Check</button>
     </div>
   </section>
 
   <section class="card result" id="result" hidden aria-live="polite">
     <div class="verdict-row">
       <span id="verdict" class="verdict"></span>
-      <span id="prob" class="prob"></span>
+      <span id="headline" class="prob"></span>
     </div>
-    <div class="meter" role="img" id="meter-label"><div id="bar"></div><span class="tick" style="left:50%"></span></div>
-    <div class="meter-scale small muted"><span>ham</span><span>threshold 0.5</span><span>spam</span></div>
+    <div class="stack" id="stack" role="img"></div>
+    <div class="legend small" id="legend"></div>
     <h3>Why</h3>
     <p id="highlighted" class="highlighted"></p>
     <ul id="evidence" class="evidence"></ul>
-    <p class="small muted">Red words push towards spam and green words towards ham. Weights are the Naive Bayes log-likelihood ratio for each word's stem.</p>
+    <p class="small muted">Each word is scored by removing it and measuring how far the scam log-odds move. Red words pushed towards scam and green words pushed away from it.</p>
   </section>
 
   <section class="card" id="model-card">
     <h2>Model card</h2>
     <p class="muted" id="model-desc">Loading…</p>
     <div class="tiles" id="tiles"></div>
-    <div class="two">
-      <div>
-        <h3>Confusion matrix (held-out test set)</h3>
-        <table class="cm" id="cm"></table>
-      </div>
-      <div>
-        <h3>Model selection (5-fold CV, train split)</h3>
-        <table class="cmp" id="cmp"></table>
-      </div>
-    </div>
+    <h3>How it compares (campaign-held-out test set)</h3>
+    <div class="table-wrap"><table class="cmp" id="cmp"></table></div>
+    <p class="small muted">Robustness is the share of scams still caught when 30% of words are obfuscated (leetspeak, look-alike characters, spacing, typos mixed together). The full methodology and figures are in the <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md" target="_blank" rel="noopener">report</a>.</p>
   </section>
 </main>
 
 <footer class="wrap small muted">
-  Built by <a href="https://github.com/hamad470" target="_blank" rel="noopener">Hamad Ur Rehman</a>. Data: UCI SMS Spam Collection (Almeida &amp; Gómez Hidalgo, 2011), CC BY 4.0.
+  Built by <a href="https://github.com/hamad470" target="_blank" rel="noopener">Hamad Ur Rehman</a>. Data: UCI SMS Spam Collection (2011) and Mishra &amp; Soni SMS Phishing Dataset (2022), both CC BY 4.0. A demo, not a security product: never act on a text because a model said it was safe.
 </footer>
 
 <script src="/static/app.js"></script>

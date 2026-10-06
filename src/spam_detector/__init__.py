@@ -1,3 +1,3 @@
-"""SMS spam detection: text preprocessing, model training and inference."""
+"""SMS scam detection: data audit, model training, evaluation and ONNX serving."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

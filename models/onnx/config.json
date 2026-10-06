@@ -1,0 +1,11 @@
+{
+  "labels": [
+    "ham",
+    "spam",
+    "smishing"
+  ],
+  "temperature": 1.8996978998184204,
+  "max_len": 96,
+  "base_model": "distilroberta-base",
+  "trained_variant": "distilroberta_aug"
+}

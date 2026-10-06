@@ -1,21 +1,26 @@
 const $ = (id) => document.getElementById(id);
-const pct = (x) => (x * 100).toFixed(1) + "%";
-// Naive Bayes is overconfident near 0 and 1; avoid claiming certainty.
-const probPct = (x) => (x > 0.999 ? ">99.9%" : x < 0.001 ? "<0.1%" : pct(x));
+const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const LABELS = {
-  bernoulli_nb: "Bernoulli NB",
-  multinomial_nb: "Multinomial NB",
-  logistic_regression: "Logistic Regression",
-  random_forest: "Random Forest",
+
+const CLASSES = {
+  ham: { title: "Looks legitimate", cls: "ham" },
+  spam: { title: "Marketing spam", cls: "spam" },
+  smishing: { title: "Smishing: likely a scam", cls: "smishing" },
+};
+const MODEL_NAMES = {
+  distilroberta_aug: "DistilRoBERTa + attack augmentation",
+  distilroberta: "DistilRoBERTa",
+  minilm_lr: "MiniLM embeddings + LR",
+  tfidf_lr: "TF-IDF word+char + LR",
+  nb_original: "Naive Bayes (original notebook)",
 };
 
-async function analyse() {
+async function check() {
   const text = $("msg").value.trim();
   if (!text) return $("msg").focus();
   $("go").disabled = true;
   try {
-    const res = await fetch("/api/predict", {
+    const res = await fetch("/api/classify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -23,72 +28,83 @@ async function analyse() {
     if (!res.ok) throw new Error((await res.json()).detail?.[0]?.msg || res.statusText);
     render(text, await res.json());
   } catch (err) {
-    alert("Prediction failed: " + err.message);
+    alert("Request failed: " + err.message);
   } finally {
     $("go").disabled = false;
   }
 }
 
 function render(text, r) {
-  const spam = r.label === "spam";
-  $("verdict").textContent = spam ? "Spam" : "Not spam";
-  $("verdict").className = "verdict " + (spam ? "spam" : "ham");
-  $("prob").textContent = `spam probability ${probPct(r.spam_probability)}`;
-  $("bar").style.width = pct(r.spam_probability);
-  $("bar").style.background = `var(--${spam ? "spam" : "ham"})`;
-  $("meter-label").setAttribute("aria-label", `Spam probability ${pct(r.spam_probability)}`);
+  const c = CLASSES[r.label];
+  $("verdict").textContent = c.title;
+  $("verdict").className = "verdict " + c.cls;
+  $("headline").textContent = `scam probability ${pct(r.scam_probability)}`;
 
-  const weights = Object.fromEntries(r.evidence.map((e) => [e.word, e.weight]));
-  $("highlighted").innerHTML = esc(text).replace(/[A-Za-z0-9]+/g, (w) => {
-    const wt = weights[w.toLowerCase()];
-    return wt === undefined ? w : `<mark class="${wt > 0 ? "s" : "h"}" title="weight ${wt}">${w}</mark>`;
-  });
+  $("stack").innerHTML = Object.entries(r.probabilities)
+    .map(([k, v]) => `<span class="seg ${k}" style="flex-grow:${Math.max(v, 0.002)}" title="${k} ${pct(v)}"></span>`)
+    .join("");
+  $("stack").setAttribute("aria-label", Object.entries(r.probabilities).map(([k, v]) => `${k} ${pct(v)}`).join(", "));
+  $("legend").innerHTML = Object.entries(r.probabilities)
+    .map(([k, v]) => `<span><i class="sw ${k}"></i>${k} <b>${pct(v)}</b></span>`)
+    .join("");
 
-  const max = Math.max(...r.evidence.map((e) => Math.abs(e.weight)), 1);
+  // Highlight by character span so repeated words are marked where they actually occur
+  const spans = [...r.evidence].sort((a, b) => a.start - b.start);
+  let html = "", pos = 0;
+  for (const e of spans) {
+    html += esc(text.slice(pos, e.start));
+    html += `<mark class="${e.impact > 0 ? "s" : "h"}" title="impact ${e.impact}">${esc(text.slice(e.start, e.end))}</mark>`;
+    pos = e.end;
+  }
+  $("highlighted").innerHTML = html + esc(text.slice(pos));
+
+  const max = Math.max(...r.evidence.map((e) => Math.abs(e.impact)), 0.1);
   $("evidence").innerHTML = r.evidence.length
     ? r.evidence
         .map((e) => `<li><span class="w">${esc(e.word)}</span>
-          <span class="b" style="width:${(Math.abs(e.weight) / max) * 100}%;background:var(--${e.weight > 0 ? "spam" : "ham"})"></span>
-          <span class="n">${e.weight > 0 ? "+" : ""}${e.weight.toFixed(2)}</span></li>`)
+          <span class="b ${e.impact > 0 ? "s" : "h"}" style="width:${(Math.abs(e.impact) / max) * 100}%"></span>
+          <span class="n">${e.impact > 0 ? "+" : ""}${e.impact.toFixed(2)}</span></li>`)
         .join("")
-    : '<li class="muted">None of the words are in the model\'s 1,000-word vocabulary, so it falls back on the base rate.</li>';
+    : '<li class="muted">No single word moves the decision much. The verdict comes from the message as a whole.</li>';
   $("result").hidden = false;
 }
 
 async function loadCard() {
   const c = await (await fetch("/api/model")).json();
-  const m = c.test_metrics;
-  const d = c.dataset;
+  if (!c.final_model) throw new Error("no card");
+  const m = c.models[c.final_model];
   $("model-desc").textContent =
-    `${LABELS[c.model] || c.model} on TF-IDF features (top 1,000 by chi-squared). Trained on ${d.train_size.toLocaleString()} messages ` +
-    `and evaluated on ${d.test_size.toLocaleString()} unseen ones. ${pct(d.spam_share)} of the dataset is spam.`;
-  $("tiles").innerHTML = [["Accuracy", m.accuracy], ["Precision", m.precision], ["Recall", m.recall], ["F1", m.f1], ["ROC-AUC", m.roc_auc]]
-    .map(([k, v]) => `<div class="tile"><div class="v">${pct(v)}</div><div class="k">${k}</div></div>`)
+    `${MODEL_NAMES[c.final_model]}, quantised to int8 ONNX (${c.onnx.onnx_size_mb} MB). ` +
+    `Tested on ${c.test_messages.toLocaleString()} messages from spam campaigns it never saw during training.`;
+  $("tiles").innerHTML = [
+    ["Macro-F1 (3 classes)", pct(m.macro_f1)],
+    ["Scams caught", pct(m.binary.recall)],
+    ["Smishing recall", pct(m.per_class.smishing.recall)],
+    ["Real texts flagged", pct(m.binary.ham_false_positive_rate, 2)],
+    ["Robust @30% obfuscation", pct(m.robustness.mixed["0.3"])],
+  ]
+    .map(([k, v]) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`)
     .join("");
-  const cm = m.confusion_matrix;
-  $("cm").innerHTML = `<tr><th></th><th>pred ham</th><th>pred spam</th></tr>
-    <tr><td>actual ham</td><td class="hit">${cm.tn}</td><td class="miss">${cm.fp}</td></tr>
-    <tr><td>actual spam</td><td class="miss">${cm.fn}</td><td class="hit">${cm.tp}</td></tr>`;
   $("cmp").innerHTML =
-    "<tr><th>Model</th><th>Precision</th><th>Recall</th><th>F1</th></tr>" +
-    Object.entries(c.cv_comparison)
-      .sort((a, b) => b[1].f1 - a[1].f1)
-      .map(([n, s]) => `<tr class="${n === c.model ? "best" : ""}"><td>${LABELS[n] || n}</td><td>${pct(s.precision)}</td><td>${pct(s.recall)}</td><td>${pct(s.f1)}</td></tr>`)
+    "<tr><th>Model</th><th>Macro-F1</th><th>Scam F1</th><th>Robustness</th><th>Size</th></tr>" +
+    Object.entries(c.models)
+      .sort((a, b) => b[1].macro_f1 - a[1].macro_f1)
+      .map(([n, s]) => `<tr class="${n === c.final_model ? "best" : ""}"><td>${MODEL_NAMES[n] || n}</td>
+        <td>${pct(s.macro_f1)}</td><td>${pct(s.binary.f1)}</td><td>${pct(s.robustness.mixed["0.3"])}</td><td>${s.size_mb} MB</td></tr>`)
       .join("");
 }
 
-$("go").addEventListener("click", analyse);
-$("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) analyse(); });
+$("go").addEventListener("click", check);
+$("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) check(); });
 $("examples").addEventListener("click", (e) => {
   if (!e.target.dataset.text) return;
   $("msg").value = e.target.dataset.text;
-  analyse();
+  check();
 });
 loadCard().catch(() => ($("model-desc").textContent = "Model card unavailable."));
 
-// Shareable links: /?text=... pre-fills and analyses the message.
 const shared = new URLSearchParams(location.search).get("text");
 if (shared) {
   $("msg").value = shared;
-  analyse();
+  check();
 }

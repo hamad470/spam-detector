@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spam-detector"
-version = "1.0.0"
-description = "SMS spam classifier (TF-IDF + chi-squared feature selection + Naive Bayes) served with FastAPI"
+version = "2.0.0"
+description = "Ham / spam / smishing SMS classifier with a leakage-aware evaluation, obfuscation robustness and an ONNX FastAPI service"
 authors = [{ name = "Hamad Ur Rehman" }]
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+# Runtime pins live in requirements*.txt so the Docker image and CI install exactly the same versions
 
 [tool.setuptools.packages.find]
 where = ["src"]
