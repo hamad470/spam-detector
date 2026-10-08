@@ -71,3 +71,29 @@ def test_decide_flags_scam_even_when_ham_wins_argmax():
 
     proba = np.array([[0.41, 0.30, 0.29], [0.90, 0.05, 0.05], [0.20, 0.10, 0.70]])
     assert decide(proba).tolist() == [1, 0, 2]
+
+
+def test_prepare_adds_the_channel_prefix():
+    assert prepare("hello", "sms") == "[sms] hello"
+    assert prepare("Hello", "email") == "[email] hello"
+
+
+def test_email_scrub_removes_corpus_fingerprints():
+    raw = "Subject: [Spambayes] Re: price , only 15 $ ! mail jose@monkey.org\nhttp://xent.com/mailman/listinfo/fork"
+    assert prepare(raw, "email") == "[email] subject: re: price, only xxmoney ! mail xxemail"
+
+
+def test_email_addresses_survive_leetspeak_undoing():
+    assert "xxemail" in prepare("contact supp0rt@paypa1.com now", "sms")
+
+
+def test_enron_packaging_is_undone():
+    from spam_detector.datasets import detokenize_enron
+
+    assert detokenize_enron("visit http : / / www . x . com , it ' s high - income") == (
+        "visit http://www.x.com, it's high-income"
+    )
+
+
+def test_years_are_masked():
+    assert "xxyear" in prepare("your 2024 tax refund", "sms")

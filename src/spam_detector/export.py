@@ -1,29 +1,31 @@
-"""Export the fine-tuned transformer to int8 ONNX for CPU serving.
+"""Export the deployed transformer to int8 ONNX, and write the model card the demo reads.
 
-    python -m spam_detector.export --model distilroberta_aug
+    python -m spam_detector.export            # ONNX + quantisation + agreement check
+    python -m spam_detector.evaluate          # (uses the ONNX model for robustness/latency)
+    python -m spam_detector.export --card     # models/onnx/metrics.json from reports/results.json
 
-The serving image then needs onnxruntime + tokenizers (~60 MB) instead of
-PyTorch + transformers (~1 GB), and inference gets roughly 2-3x faster.
+Serving then needs onnxruntime + tokenizers (~60 MB) instead of PyTorch + transformers (~1 GB).
 """
 
 import argparse
 import json
 import shutil
-import time
 
 import numpy as np
 import pandas as pd
 import torch
 from onnxruntime.quantization import QuantType, quantize_dynamic
-from sklearn.metrics import f1_score, recall_score
 
 from .decision import decide
-from .models.transformer import DistilRobertaClassifier
-from .paths import ARTIFACTS, LABELS, MODELS, PROCESSED, REPORTS
+from .models.transformer import MAX_LEN, DistilRobertaClassifier
+from .paths import ARTIFACTS, DOMAINS, LABELS, MODELS, PROCESSED, REPORTS
+
+FINAL_RUN = ARTIFACTS / "runs" / "final_seed0"
+OUT = MODELS / "onnx"
 
 
-def export(name: str, out_dir=MODELS / "onnx") -> dict:
-    clf = DistilRobertaClassifier(ARTIFACTS / name)
+def export(run_dir=FINAL_RUN, out_dir=OUT) -> None:
+    clf = DistilRobertaClassifier(run_dir / "model", device="cpu")
     out_dir.mkdir(parents=True, exist_ok=True)
     fp32 = out_dir / "model.fp32.onnx"
     sample = clf.tokenizer(["export sample"], return_tensors="pt")
@@ -38,8 +40,7 @@ def export(name: str, out_dir=MODELS / "onnx") -> dict:
         opset_version=17,
         dynamo=False,
     )
-    int8 = out_dir / "model.onnx"
-    quantize_dynamic(fp32, int8, weight_type=QuantType.QInt8)
+    quantize_dynamic(fp32, out_dir / "model.onnx", weight_type=QuantType.QInt8)
     fp32.unlink()
 
     clf.tokenizer.save_pretrained(out_dir)
@@ -48,69 +49,80 @@ def export(name: str, out_dir=MODELS / "onnx") -> dict:
     config = {
         "labels": LABELS,
         "temperature": clf.temperature,
-        "max_len": clf.max_len,
+        "max_len": MAX_LEN,
         "base_model": "distilroberta-base",
-        "trained_variant": name,
+        "trained_on": "train + test + future splits (see reports/REPORT.md)",
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
-    return config
+    shutil.copy(run_dir / "history.json", out_dir / "training_history.json")
 
 
-def check_agreement(name: str) -> dict:
-    """Quantisation shouldn't change decisions. Compare against the PyTorch model on the test split."""
+def check_agreement(run_dir=FINAL_RUN) -> dict:
+    """Quantisation shouldn't change decisions. Compared on the validation split, the one
+    part of the corpus the final model was never trained on."""
     from .inference import ScamClassifier
 
     df = pd.read_parquet(PROCESSED / "corpus.parquet")
-    test = df[(df.split == "test") & df.label.isin(LABELS)]
-    texts = test.text.tolist()
-    torch_p = DistilRobertaClassifier(ARTIFACTS / name).predict_proba(texts)
-    onnx_p = ScamClassifier(MODELS / "onnx").predict_proba(texts)
-
-    # Score the quantised model itself: it's what the demo serves
-    y = np.array([LABELS.index(label) for label in test.label])
-    pred = decide(onnx_p)
-    is_scam, flagged = y > 0, pred > 0
-    return {
-        "argmax_agreement": round(float((decide(torch_p) == pred).mean()), 4),
+    val = df[(df.split == "val") & df.label.isin(LABELS)]
+    torch_p = DistilRobertaClassifier(run_dir / "model", device="cpu").predict_proba(val.text, val.domain)
+    onnx_p = ScamClassifier(OUT).predict_proba(val.text, val.domain)
+    report = {
+        "decision_agreement": round(float((decide(torch_p) == decide(onnx_p)).mean()), 4),
         "max_abs_prob_diff": round(float(np.abs(torch_p - onnx_p).max()), 4),
-        "onnx_size_mb": round((MODELS / "onnx" / "model.onnx").stat().st_size / 1e6, 1),
-        "test_macro_f1": round(f1_score(y, pred, average="macro"), 4),
-        "test_scam_f1": round(f1_score(is_scam, flagged), 4),
-        "test_scam_recall": round(recall_score(is_scam, flagged), 4),
-        "test_ham_false_positive_rate": round(float(flagged[~is_scam].mean()), 4),
-        "test_smishing_recall": round(recall_score(y == 2, pred == 2), 4),
+        "median_abs_prob_diff": round(float(np.median(np.abs(torch_p - onnx_p).max(1))), 5),
+        "onnx_size_mb": round((OUT / "model.onnx").stat().st_size / 1e6, 1),
+        "pytorch_size_mb": round((run_dir / "model" / "model.safetensors").stat().st_size / 1e6, 1),
+        "n": len(val),
     }
+    (ARTIFACTS / "onnx_check.json").write_text(json.dumps(report, indent=2))
+    return report
 
 
-def write_card(name: str, onnx_report: dict) -> None:
-    """The slice of results.json the web app shows, plus the ONNX numbers."""
-    from .inference import ScamClassifier
-
-    results = json.loads((REPORTS / "results.json").read_text())
-    clf = ScamClassifier(MODELS / "onnx")
-    text = "URGENT! Your parcel is held. Pay the £1.99 fee at royalmail-redelivery.com"
-    clf.predict_proba([text])
-    started = time.perf_counter()
-    for _ in range(30):
-        clf.predict_proba([text])
-    onnx_report["latency_ms"] = round((time.perf_counter() - started) / 30 * 1000, 2)
-    keep = ("macro_f1", "macro_f1_ci95", "per_class", "binary", "robustness", "size_mb")
+def write_card() -> None:
+    """The slice of results.json the web demo shows."""
+    r = json.loads((REPORTS / "results.json").read_text())
+    audit = json.loads((REPORTS / "shortcut_audit.json").read_text())
+    tr = r["models"]["distilroberta"]
     card = {
-        "final_model": name,
-        "test_messages": sum(results["test_size"].values()),
-        "onnx": onnx_report,
-        "models": {k: {f: v[f] for f in keep} for k, v in results["models"].items()},
-        "leakage": results["leakage"],
+        "headline_model": "distilroberta",
+        "n_seeds": tr["n_seeds"],
+        "test_size": r["test_size"],
+        "future_size": r["future_size"],
+        "onnx": json.loads((ARTIFACTS / "onnx_check.json").read_text())
+        | {"latency_ms": r["latency_ms"].get("distilroberta")},
+        "models": {
+            name: {
+                d: {k: m[d][k] for k in ("macro_f1", "scam_f1", "legit_false_positive_rate")}
+                | {"phishing_recall": m[d]["per_class"]["phishing"]["recall"]}
+                for d in [*DOMAINS, "sms_uci_mendeley"]
+            }
+            | {
+                "future_phishing_recall": m["future"]["phishing_recall"],
+                "future_scam_recall": m["future"]["scam_recall"],
+                "robust_sms_mixed_30": r["robustness"]
+                .get(name, {})
+                .get("sms", {})
+                .get("mixed", {})
+                .get("0.3"),
+                "size_mb": r["size_mb"].get(name),
+            }
+            for name, m in r["models"].items()
+        },
+        "shortcut_audit": {
+            k: audit[k]["flagged_share_spamassassin_legit_unseen_source"]
+            for k in ("as_packaged", "raw", "scrubbed")
+        },
     }
-    (MODELS / "onnx" / "metrics.json").write_text(json.dumps(card, indent=2))
+    (OUT / "metrics.json").write_text(json.dumps(card, indent=2))
+    print("wrote", OUT / "metrics.json")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--model", default="distilroberta_aug")
+    p.add_argument("--card", action="store_true", help="only write metrics.json (run after evaluate)")
     args = p.parse_args()
-    export(args.model)
-    report = check_agreement(args.model)
-    print(report)
-    shutil.copy(ARTIFACTS / args.model / "history.json", MODELS / "onnx" / "training_history.json")
-    write_card(args.model, report)
+    if args.card:
+        write_card()
+    else:
+        export()
+        print(check_agreement())

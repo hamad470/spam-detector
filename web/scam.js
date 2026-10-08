@@ -1,13 +1,13 @@
 // Browser port of src/spam_detector/{text,decision,inference}.py.
-// Same normaliser, same tokenizer, same int8 ONNX model, same decision rule.
+// Same normaliser, same email clean-up, same tokenizer, same int8 ONNX model, same decision rule.
 // web/test/parity.test.mjs checks every step against outputs from the Python code.
 
 import * as ort from "onnxruntime-web";
 import { Tokenizer } from "@huggingface/tokenizers";
 
-export const LABELS = ["ham", "spam", "smishing"];
+export const LABELS = ["legit", "spam", "phishing"];
 
-// ---- text.py --------------------------------------------------------------
+// ---- text.py: de-obfuscation ------------------------------------------------
 
 const CONFUSABLES = {
   "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i",
@@ -17,13 +17,11 @@ const CONFUSABLES = {
 const LEET = { 0: "o", 1: "i", 3: "e", 4: "a", 5: "s", 7: "t", "@": "a", $: "s" };
 const SPACED_OUT = /\b[A-Za-z]([.\-_* ])[A-Za-z](?:\1[A-Za-z])+\b(?![.\-_*][A-Za-z])/g;
 const ZERO_WIDTH = /[​-‏⁠﻿]/g;
-const TAGS = [
-  [/(https?:\/\/|www\.)\S+|\b\S+\.(com|co\.uk|net|ly|info|biz)\b/gi, " xxurl "],
-  [/\+?\d[\d\s-]{7,}\d/g, " xxphone "],
-  [/[£$€]\s?\d[\d,.]*|\d[\d,.]*\s?(pounds|gbp|usd)\b/gi, " xxmoney "],
-];
+const EMAIL_TOKEN = /[\p{L}\p{N}_.+-]+@[\p{L}\p{N}_-]+\.[\p{L}\p{N}_.-]+/u;
+const EMAIL_TOKEN_G = new RegExp(EMAIL_TOKEN.source, "gu");
 
 function deleet(token) {
+  if (EMAIL_TOKEN.test(token)) return token; // '@' is leetspeak for 'a', but not inside an address
   const chars = [...token];
   const hasAlpha = chars.some((c) => /\p{L}/u.test(c));
   const mostlyDigits = chars.filter((c) => /\p{Nd}/u.test(c)).length > chars.length / 2;
@@ -37,16 +35,47 @@ export function normalise(text) {
   return text.replace(/\S+/g, deleet);
 }
 
+// ---- text.py: entity tags ---------------------------------------------------
+
+const TAGS = [
+  [/[\p{L}\p{N}_.+-]+@[\p{L}\p{N}_-]+(\.[\p{L}\p{N}_-]+)+/gu, " xxemail "],
+  [/(https?:\/\/|www\.)\S+|\b\S+\.(com|co\.uk|net|org|ly|info|biz|io|xyz|top)\b/gi, " xxurl "],
+  [/\+?\d[\d\s-]{7,}\d/g, " xxphone "],
+  [/[£$€]\s?\d[\d,.]*|\d[\d,.]*\s?([£$€]|pounds\b|gbp\b|usd\b|dollars\b)/gi, " xxmoney "],
+  [/\b(19[89]\d|20[0-3]\d)\b/g, " xxyear "],
+];
+
 export function tagEntities(text) {
   for (const [pattern, tag] of TAGS) text = text.replace(pattern, tag);
   return text;
 }
 
-export const prepare = (text) => tagEntities(normalise(text));
+// ---- text.py: email clean-up ------------------------------------------------
+
+const SPACE_BEFORE = /\s+([,.;:!?%)\]}'])/g;
+const SPACE_AFTER = /([(\[{$£€])\s+/g;
+const LIST_TAG = /^(subject:\s*)((re|fwd?):\s*)*\[[^\]]{2,30}\]\s*/gim;
+const LIST_FOOTER = /^.*(mailman\/listinfo|mailing list|list-unsubscribe|_{20,}|-{20,}).*$/gim;
+const IDENTITY = /\b(jose|monkey|nazario|enron|kaminski|vince|ect|hou)\b/gi;
+
+export function scrubEmail(text) {
+  text = text.replace(EMAIL_TOKEN_G, " xxemail ");
+  text = text.replace(LIST_TAG, "$1").replace(LIST_FOOTER, " ");
+  text = text.toLowerCase();
+  text = text.replace(SPACE_BEFORE, "$1").replace(SPACE_AFTER, "$1");
+  return text.replace(IDENTITY, " ");
+}
+
+/** The exact string the model sees. Must match text.prepare() in Python. */
+export function prepare(text, domain = "sms") {
+  text = normalise(text);
+  if (domain === "email") text = scrubEmail(text);
+  return `[${domain}] ` + tagEntities(text).split(/\s+/).filter(Boolean).join(" ");
+}
 
 // ---- decision.py ----------------------------------------------------------
 
-/** Scam first (P(spam) + P(smishing) >= threshold), then which kind. */
+/** Scam first (P(spam) + P(phishing) >= threshold), then which kind. */
 export function decide(p, threshold = 0.5) {
   if (1 - p[0] < threshold) return 0;
   return p[2] > p[1] ? 2 : 1;
@@ -71,15 +100,15 @@ export class ScamClassifier {
     return self;
   }
 
-  encode(prepared) {
+  encode(prepared, domain) {
     let ids = this.tokenizer.encode(prepared).ids;
-    const max = this.config.max_len;
+    const max = this.config.max_len[domain];
     if (ids.length > max) ids = [...ids.slice(0, max - 1), this.eosId]; // keep </s>, like tokenizers' truncation
     return ids;
   }
 
-  async #probs(prepared) {
-    const encoded = prepared.map((t) => this.encode(t));
+  async #probs(prepared, domain) {
+    const encoded = prepared.map((t) => this.encode(t, domain));
     const width = Math.max(...encoded.map((ids) => ids.length));
     const ids = new BigInt64Array(encoded.length * width).fill(BigInt(this.padId));
     const mask = new BigInt64Array(encoded.length * width);
@@ -107,14 +136,16 @@ export class ScamClassifier {
     return rows;
   }
 
-  async predictProba(texts) {
+  async predictProba(texts, domain = "sms") {
     const rows = [];
-    for (let i = 0; i < texts.length; i += 32) rows.push(...(await this.#probs(texts.slice(i, i + 32).map(prepare))));
+    for (let i = 0; i < texts.length; i += 16) {
+      rows.push(...(await this.#probs(texts.slice(i, i + 16).map((t) => prepare(t, domain)), domain)));
+    }
     return rows;
   }
 
-  async classify(text, { explain = true, topK = 6 } = {}) {
-    const [p] = await this.predictProba([text]);
+  async classify(text, { domain = "sms", explain = true, topK = 6 } = {}) {
+    const [p] = await this.predictProba([text], domain);
     const scam = p[1] + p[2];
     const result = {
       label: LABELS[decide(p)],
@@ -122,16 +153,20 @@ export class ScamClassifier {
       scamProbability: scam,
       evidence: [],
     };
-    if (explain) result.evidence = await this.#occlusion(text, scam, topK);
+    if (explain) result.evidence = await this.#occlusion(text, domain, scam, topK);
     return result;
   }
 
-  // Drop each word, re-score every variant in one batch, report the change in scam log-odds
-  async #occlusion(text, base, topK) {
+  // Drop each word, re-score every variant, report the change in scam log-odds.
+  // Emails: only the first 60 words, which is where the hook usually is.
+  async #occlusion(text, domain, base, topK) {
     const spans = [...text.matchAll(/\S+/g)].slice(0, 60).map((m) => [m.index, m.index + m[0].length]);
     if (spans.length < 2) return [];
-    const variants = spans.map(([a, b]) => prepare(text.slice(0, a) + text.slice(b)));
-    const scores = (await this.#probs(variants)).map((p) => p[1] + p[2]);
+    const variants = spans.map(([a, b]) => prepare(text.slice(0, a) + text.slice(b), domain));
+    const scores = [];
+    for (let i = 0; i < variants.length; i += 16) {
+      scores.push(...(await this.#probs(variants.slice(i, i + 16), domain)).map((p) => p[1] + p[2]));
+    }
     const baseLo = logOdds(base);
     return spans
       .map(([a, b], i) => ({ word: text.slice(a, b), start: a, end: b, impact: baseLo - logOdds(scores[i]) }))

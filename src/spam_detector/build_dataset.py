@@ -14,6 +14,8 @@ Splits:
   - future: Nazario phishing from 2023-2025, never trained on. Tests whether the model catches
     phishing written after its training data. future_novel marks the ones whose campaign has no
     older relative.
+  - external: all of ExAIS. Its labels follow a different definition of spam (carrier service
+    notices are spam, some prize-draw promotions are ham), so it is used only as a separate test.
 """
 
 import json
@@ -114,6 +116,7 @@ def build() -> tuple[pd.DataFrame, dict]:
 
 def _split(df: pd.DataFrame) -> pd.Series:
     future = (df.source == "nazario") & df.year.isin(FUTURE_YEARS)
+    external = df.source == "exais_2014"
     # A future email whose campaign also has an older member is still a fair "future" test only
     # if that older member is kept out of training. Simpler and stricter: mark which future
     # emails are genuinely new campaigns, and report both numbers.
@@ -122,7 +125,8 @@ def _split(df: pd.DataFrame) -> pd.Series:
 
     split = pd.Series("test", index=df.index)
     split[future] = "future"
-    pool = df[~future & (df.label != "spam_unlabelled")]
+    split[external] = "external"
+    pool = df[~future & ~external & (df.label != "spam_unlabelled")]
     strata = pool.domain + "/" + pool.label
     folds = StratifiedGroupKFold(n_splits=7, shuffle=True, random_state=SEED)
     fold_of_group = {}
@@ -130,7 +134,7 @@ def _split(df: pd.DataFrame) -> pd.Series:
         for g in pool.group.iloc[idx].unique():
             fold_of_group[g] = fold
     fold = df.group.map(fold_of_group)
-    keep = ~future
+    keep = ~future & ~external
     split[keep & (fold >= 2)] = "train"
     split[keep & (fold == 1)] = "val"
     return split

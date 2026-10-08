@@ -261,7 +261,7 @@ def main(argv=None):
     log(f"temperature {clf.temperature:.3f}")
 
     # Score every evaluation split here, so the slow part never has to run on a CPU
-    evaluate_on = df[df.split.isin(["val", "test", "future"])]
+    evaluate_on = df[df.split.isin(["val", "test", "future", "external"])]
     if args.limit:
         evaluate_on = evaluate_on.groupby(["split", "domain", "label"]).head(20)
     probs = clf.predict_proba(evaluate_on.text, evaluate_on.domain)

@@ -2,59 +2,62 @@
 
     python -m spam_detector.evaluate
 
-Classical models are trained here (seconds); transformers are loaded from
-artifacts/ if they've been trained. Everything is scored on the campaign-held-out
-test split unless stated otherwise.
+Baselines are trained here (minutes on a CPU). Transformer results are read from
+artifacts/runs/*/predictions.parquet, written by the Colab notebook.
+
+Test sets:
+  test          held-out campaigns, SMS and email, 2003-2022
+  future        Nazario phishing from 2023-2025, never trained on (except by the final model)
+  no-hook       test scams with no link, phone number, email address or money amount
 """
 
 import json
+import re
 import time
-from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     average_precision_score,
-    classification_report,
     confusion_matrix,
     f1_score,
+    precision_recall_fscore_support,
     precision_score,
     recall_score,
-    roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
 
 from .attacks import attack_all
-from .datasets import load_enron, load_mendeley, load_uci
+from .datasets import load_mendeley, load_uci
 from .decision import decide
 from .models.classical import NBOriginal, TfidfLR
-from .models.embeddings import EmbeddingLR
-from .paths import ARTIFACTS, LABELS, PROCESSED, REPORTS
-from .text import dedup_key
+from .paths import ARTIFACTS, DOMAINS, LABELS, MODELS, PROCESSED, REPORTS
+from .text import dedup_key, prepare
 
 SEED = 42
 ATTACKS = ["leetspeak", "homoglyph", "spacing", "typo", "mixed"]
-RATES = [0.0, 0.1, 0.2, 0.3, 0.5, 0.7]
+RATES = [0.0, 0.1, 0.3, 0.5, 0.7]
+HOOKS = re.compile(r"\bxx(?:url|phone|money|email)\b")
+RUNS = ARTIFACTS / "runs"
+MAIN_SEEDS = ["sms-email_seed0", "sms-email_seed1", "sms-email_seed2"]
 
 
-def malicious_score(proba: np.ndarray) -> np.ndarray:
-    """P(spam) + P(smishing): the score a 'block or allow' filter would threshold.
-
-    Written as 1 - P(ham) so it also works for the binary models in the leakage study.
-    """
+def scam_score(proba: np.ndarray) -> np.ndarray:
+    """P(spam) + P(phishing), written as 1 - P(legit) so it also works for binary models."""
     return 1.0 - proba[:, 0]
 
 
 def expected_calibration_error(y_true, p, bins=10) -> float:
     edges = np.linspace(0, 1, bins + 1)
     idx = np.clip(np.digitize(p, edges) - 1, 0, bins - 1)
-    ece = 0.0
-    for b in range(bins):
-        m = idx == b
-        if m.any():
-            ece += m.mean() * abs(y_true[m].mean() - p[m].mean())
-    return float(ece)
+    return float(
+        sum(
+            (idx == b).mean() * abs(y_true[idx == b].mean() - p[idx == b].mean())
+            for b in range(bins)
+            if (idx == b).any()
+        )
+    )
 
 
 def bootstrap_ci(y_true, y_pred, metric, n=1000, seed=SEED):
@@ -65,181 +68,323 @@ def bootstrap_ci(y_true, y_pred, metric, n=1000, seed=SEED):
     return [round(float(np.percentile(scores, 2.5)), 4), round(float(np.percentile(scores, 97.5)), 4)]
 
 
+def channel_metrics(frame: pd.DataFrame, proba: np.ndarray) -> dict:
+    """Everything reported for one model on one channel's test set."""
+    y = np.array([LABELS.index(label) for label in frame.label])
+    pred = decide(proba)
+    # Average F1 over the classes this test set actually has (ExAIS has no phishing class)
+    present = sorted(set(y.tolist()))
+    is_scam, flagged, score = y > 0, pred > 0, scam_score(proba)
+    p, r, f, _ = precision_recall_fscore_support(y, pred, labels=[0, 1, 2], zero_division=0)
+    return {
+        "n": len(frame),
+        "macro_f1": round(f1_score(y, pred, average="macro", labels=present), 4),
+        "macro_f1_ci95": bootstrap_ci(y, pred, lambda a, b: f1_score(a, b, average="macro", labels=present)),
+        "per_class": {
+            label: {"precision": round(p[i], 4), "recall": round(r[i], 4), "f1": round(f[i], 4)}
+            for i, label in enumerate(LABELS)
+        },
+        "confusion_matrix": confusion_matrix(y, pred, labels=[0, 1, 2]).tolist(),
+        "scam_f1": round(f1_score(is_scam, flagged), 4),
+        "scam_precision": round(precision_score(is_scam, flagged, zero_division=0), 4),
+        "scam_recall": round(recall_score(is_scam, flagged), 4),
+        "legit_false_positive_rate": round(float(flagged[~is_scam].mean()), 4),
+        "pr_auc": round(average_precision_score(is_scam, score), 4),
+        "ece": round(expected_calibration_error(is_scam.astype(float), score), 4),
+    }
+
+
+def scam_recall(proba) -> float:
+    return round(float((decide(proba) > 0).mean()), 4)
+
+
+def phishing_recall(proba) -> float:
+    return round(float((decide(proba) == 2).mean()), 4)
+
+
+def evaluate_predictions(df: pd.DataFrame, proba: np.ndarray) -> dict:
+    """df: rows of the val/test/future splits, aligned with proba."""
+    out = {}
+    lab = df.label.isin(LABELS).to_numpy()
+    for d in DOMAINS:
+        m = ((df.split == "test") & (df.domain == d)).to_numpy() & lab
+        out[d] = channel_metrics(df[m], proba[m])
+    # ExAIS is never trained on (its labels follow a different definition of spam); it is
+    # reported as an external test. The SMS test split is UCI/Mendeley only.
+    out["sms_uci_mendeley"] = out["sms"]
+    ext = (df.split == "external").to_numpy() & lab
+    out["sms_exais"] = channel_metrics(df[ext], proba[ext])
+    fut = (df.split == "future").to_numpy()
+    novel = fut & df.future_novel.to_numpy()
+    out["future"] = {
+        "n": int(fut.sum()),
+        "phishing_recall": phishing_recall(proba[fut]),
+        "scam_recall": scam_recall(proba[fut]),
+        "novel_n": int(novel.sum()),
+        "novel_phishing_recall": phishing_recall(proba[novel]),
+        "by_year": {
+            int(y): scam_recall(proba[fut & (df.year == y).to_numpy()]) for y in sorted(df[fut].year.unique())
+        },
+    }
+    # Older phishing in the test split, by year, to put the future numbers in context
+    old = ((df.split == "test") & (df.source == "nazario")).to_numpy()
+    out["test_phishing_by_era"] = {
+        "2005-2007": scam_recall(proba[old & (df.year <= 2007).to_numpy()]),
+        "2015-2022": scam_recall(proba[old & (df.year >= 2015).to_numpy()]),
+    }
+    test = (df.split == "test").to_numpy() & lab
+    no_hook = test & ~df.prepared.str.contains(HOOKS).to_numpy()
+    out["no_hook"] = {}
+    for d in DOMAINS:
+        dm = no_hook & (df.domain == d).to_numpy()
+        scams = dm & (df.label != "legit").to_numpy()
+        legit = dm & (df.label == "legit").to_numpy()
+        out["no_hook"][d] = {
+            "scams": int(scams.sum()),
+            "scam_recall": scam_recall(proba[scams]),
+            "legit": int(legit.sum()),
+            "legit_false_positive_rate": round(float((decide(proba[legit]) > 0).mean()), 4),
+            "scam_recall_with_hooks": scam_recall(
+                proba[test & ~no_hook & (df.domain == d).to_numpy() & (df.label != "legit").to_numpy()]
+            ),
+        }
+    unl = ((df.split == "test") & (df.label == "spam_unlabelled")).to_numpy()
+    out["uci_spam_without_subtype_detected"] = scam_recall(proba[unl])
+    return out
+
+
 def latency_ms(
     model, text="URGENT! Your parcel is held. Pay the £1.99 fee at royalmail-redelivery.com", runs=30
 ):
-    model.predict_proba([text])  # warm-up
+    model.predict_proba([text], ["sms"])
     start = time.perf_counter()
     for _ in range(runs):
-        model.predict_proba([text])
+        model.predict_proba([text], ["sms"])
     return round((time.perf_counter() - start) / runs * 1000, 2)
 
 
-def load_models(train: pd.DataFrame) -> dict:
-    models = {}
-    for m in [NBOriginal(), TfidfLR(), EmbeddingLR()]:
-        started = time.time()
-        models[m.name] = m.fit(list(train.text), list(train.label))
-        print(f"trained {m.name} in {time.time() - started:.1f}s", flush=True)
-        joblib.dump(m, ARTIFACTS / f"{m.name}.joblib", compress=3)
-    for name in ["distilroberta", "distilroberta_aug"]:
-        if (ARTIFACTS / name / "config.json").exists():
-            from .models.transformer import DistilRobertaClassifier
+def robustness(model, val: pd.DataFrame) -> dict:
+    """Share of validation scams still flagged as the share of disguised words grows.
 
-            models[name] = DistilRobertaClassifier(ARTIFACTS / name)
-            models[name].name = name
-    return models
+    Validation, not test: the deployed transformer was trained on the test split, so val is the
+    only clean data every model here has never been fitted on.
+    """
+    out = {}
+    for d in DOMAINS:
+        scams = val[(val.domain == d) & (val.label != "legit")]
+        if d == "email":  # 3,000 emails x 25 attacked copies is slow on a CPU; a fixed sample is enough
+            scams = scams.sample(min(len(scams), 400), random_state=SEED)
+        out[d] = {
+            attack: {
+                str(rate): scam_recall(
+                    model.predict_proba(attack_all(scams.text, attack, rate, seed=1), scams.domain)
+                )
+                for rate in RATES
+            }
+            for attack in ATTACKS
+        }
+    return out
 
 
-def size_mb(name: str) -> float:
-    path = ARTIFACTS / name
-    files = [path / "model.safetensors"] if path.is_dir() else [path.with_suffix(".joblib")]
-    if name == "minilm_lr":  # the pickled LR is tiny; the frozen encoder is what has to ship
-        from huggingface_hub import try_to_load_from_cache
+def transformer_results(df: pd.DataFrame) -> dict:
+    """Aggregate the Colab runs: mean and spread over seeds, plus single-channel runs."""
+    out = {"seeds": {}, "single_channel": {}}
+    key = ["split", "domain", "label", "source", "year"]
+    for name in MAIN_SEEDS + ["sms_seed0", "email_seed0", "final_seed0"]:
+        path = RUNS / name / "predictions.parquet"
+        if not path.exists():
+            print("missing run", name)
+            continue
+        pred = pd.read_parquet(path)
+        frame = df.loc[pred.index]
+        assert (
+            frame[key].values == pred[key].values
+        ).all(), f"{name}: predictions don't line up with the corpus"
+        proba = pred[[f"p_{label}" for label in LABELS]].to_numpy()
+        res = evaluate_predictions(frame, proba)
+        res["history"] = json.loads((RUNS / name / "history.json").read_text())
+        res["meta"] = json.loads((RUNS / name / "meta.json").read_text())
+        if name in MAIN_SEEDS:
+            out["seeds"][name] = res
+        elif name == "final_seed0":
+            out["final"] = {
+                "val": {d: channel_metrics(*_val(frame, proba, d)) for d in DOMAINS},
+                "meta": res["meta"],
+            }
+        else:
+            out["single_channel"][name] = {d: res[d]["macro_f1"] for d in DOMAINS}
+        out.setdefault("predictions", {})[name] = (frame, proba)
+    return out
 
-        from .models.embeddings import ENCODER
 
-        files.append(Path(try_to_load_from_cache(ENCODER, "model.safetensors")))
-    return round(sum(f.stat().st_size for f in files if f.exists()) / 1e6, 1)
+def _val(frame, proba, d):
+    m = ((frame.split == "val") & (frame.domain == d) & frame.label.isin(LABELS)).to_numpy()
+    return frame[m], proba[m]
+
+
+def mean_over_seeds(seeds: dict) -> dict:
+    """Same structure as one run, numbers replaced by the mean, plus *_std for the headline metrics."""
+    runs = list(seeds.values())
+    first = runs[0]
+
+    def merge(path, node):
+        if isinstance(node, dict):
+            return {k: merge(path + [k], v) for k, v in node.items()}
+        if isinstance(node, int | float) and not isinstance(node, bool):
+            vals = []
+            for r in runs:
+                v = r
+                for k in path:
+                    v = v[k]
+                vals.append(v)
+            return round(float(np.mean(vals)), 4)
+        return node
+
+    out = merge([], {k: v for k, v in first.items() if k not in ("history", "meta")})
+    for d in [*DOMAINS, "sms_uci_mendeley", "sms_exais"]:
+        for metric in ("macro_f1", "scam_f1", "legit_false_positive_rate"):
+            out[d][f"{metric}_std"] = round(float(np.std([r[d][metric] for r in runs])), 4)
+    out["future"]["phishing_recall_std"] = round(
+        float(np.std([r["future"]["phishing_recall"] for r in runs])), 4
+    )
+    out["n_seeds"] = len(runs)
+    return out
 
 
 def leakage_experiment() -> dict:
-    """How much do naive merges and random splits flatter a model?
-
-    Same model (tfidf_lr), same binary task, three protocols. Only the last one
-    resembles deployment, where next month's campaigns are new.
-    """
+    """SMS only, as in v2: how much do naive merges and random splits flatter a model?"""
     uci, men = load_uci(), load_mendeley()
     naive = pd.concat([uci, men], ignore_index=True)
-    naive["y"] = (naive.label != "ham").astype(int)
+    naive["y"] = np.where(naive.label == "ham", "legit", "spam")
     exact = naive.assign(key=naive.text.map(dedup_key)).drop_duplicates("key")
 
-    def run(df, seed):
-        tr, te = train_test_split(df, test_size=0.15, stratify=df.y, random_state=seed)
-        m = TfidfLR().fit(list(tr.text), np.where(tr.y, "spam", "ham"))
-        return f1_score(te.y, malicious_score(m.predict_proba(list(te.text))) >= 0.5)
+    def run(frame, seed):
+        tr, te = train_test_split(frame, test_size=0.15, stratify=frame.y, random_state=seed)
+        m = TfidfLR().fit(tr.text, ["sms"] * len(tr), tr.y)
+        return f1_score(te.y != "legit", scam_score(m.predict_proba(te.text, ["sms"] * len(te))) >= 0.5)
 
     out = {}
-    for name, df in [("naive_merge_random_split", naive), ("exact_dedup_random_split", exact)]:
-        scores = [run(df, s) for s in range(3)]
+    for name, frame in [("naive_merge_random_split", naive), ("exact_dedup_random_split", exact)]:
+        scores = [run(frame, s) for s in range(3)]
         out[name] = {"f1_mean": round(float(np.mean(scores)), 4), "f1_std": round(float(np.std(scores)), 4)}
-        print(name, out[name], flush=True)
-
-    corpus = pd.read_parquet(PROCESSED / "corpus.parquet")
-    corpus = corpus[corpus.label.isin(LABELS)]
-    tr, te = corpus[corpus.split != "test"], corpus[corpus.split == "test"]
-    m = TfidfLR().fit(list(tr.text), list(tr.label))
-    f1 = f1_score(te.label != "ham", malicious_score(m.predict_proba(list(te.text))) >= 0.5)
-    out["near_dup_grouped_split"] = {"f1_mean": round(float(f1), 4), "f1_std": 0.0}
-    # How many test messages under the naive protocol have an exact copy in its training set
     tr_n, te_n = train_test_split(naive, test_size=0.15, stratify=naive.y, random_state=0)
-    seen = set(tr_n.text.map(dedup_key))
     out["naive_test_messages_with_exact_copy_in_train"] = round(
-        float(te_n.text.map(dedup_key).isin(seen).mean()), 3
+        float(te_n.text.map(dedup_key).isin(set(tr_n.text.map(dedup_key))).mean()), 3
     )
+    return out
+
+
+def exais_ablation(train: pd.DataFrame, scored: pd.DataFrame) -> dict:
+    """ExAIS defines spam differently (carrier notices, quote subscriptions). What would training
+    on it have done? Same TF-IDF model, trained without it (the protocol) and with it added.
+    ExAIS is then scored on its own held-back campaigns only, to keep the comparison fair."""
+    out = {}
+    exais = scored[(scored.split == "external") & scored.label.isin(LABELS)]
+    rng = np.random.default_rng(SEED)
+    groups = exais.group.unique()
+    held = set(rng.choice(groups, size=len(groups) // 3, replace=False))
+    ex_train, ex_test = exais[~exais.group.isin(held)], exais[exais.group.isin(held)]
+    scored = pd.concat([scored[scored.split != "external"], ex_test])
+    for name, part in [("without_exais", train), ("with_exais", pd.concat([train, ex_train]))]:
+        m = TfidfLR().fit(part.text, part.domain, part.label)
+        res = evaluate_predictions(scored, m.predict_proba(scored.text, scored.domain))
+        out[name] = {
+            k: {f: res[k][f] for f in ("macro_f1", "legit_false_positive_rate", "scam_recall")}
+            for k in ("sms_uci_mendeley", "sms_exais", "email")
+        }
     return out
 
 
 def main() -> None:
     ARTIFACTS.mkdir(exist_ok=True)
-    df = pd.read_parquet(PROCESSED / "corpus.parquet")
+    df = pd.read_parquet(
+        PROCESSED / "corpus.parquet",
+        columns=["text", "label", "domain", "source", "year", "split", "future_novel", "group"],
+    )
+    df["prepared"] = [prepare(t, d) for t, d in zip(df.text, df.domain, strict=True)]
     labelled = df[df.label.isin(LABELS)]
-    train = labelled[labelled.split == "train"]
-    test = labelled[labelled.split == "test"].reset_index(drop=True)
-    unlabelled_spam = df[(df.label == "spam_unlabelled") & (df.split == "test")]
-    enron = load_enron()
-
-    results = {"test_size": test.label.value_counts().to_dict(), "models": {}}
-    y = np.array([LABELS.index(label) for label in test.label])
-    y_bin = (y > 0).astype(int)
-    new_only = (test.source == "mendeley_only").to_numpy()
-    preds = {"label": test.label, "source": test.source, "text": test.text}
-
-    models = load_models(train)
-    for name, model in models.items():
-        print(f"evaluating {name}", flush=True)
-        proba = model.predict_proba(list(test.text))
-        pred, score = decide(proba), malicious_score(proba)
-        pred_bin = (score >= 0.5).astype(int)
-        preds[f"{name}__malicious"] = score
-        for i, label in enumerate(LABELS):
-            preds[f"{name}__p_{label}"] = proba[:, i]
-
-        r = {
-            "macro_f1": round(f1_score(y, pred, average="macro"), 4),
-            "macro_f1_ci95": bootstrap_ci(y, pred, lambda a, b: f1_score(a, b, average="macro")),
-            "per_class": {
-                k: {m: round(v[m], 4) for m in ("precision", "recall", "f1-score")}
-                for k, v in classification_report(y, pred, target_names=LABELS, output_dict=True).items()
-                if k in LABELS
-            },
-            "confusion_matrix": confusion_matrix(y, pred).tolist(),
-            "binary": {
-                "precision": round(precision_score(y_bin, pred_bin), 4),
-                "recall": round(recall_score(y_bin, pred_bin), 4),
-                "f1": round(f1_score(y_bin, pred_bin), 4),
-                "f1_ci95": bootstrap_ci(y_bin, pred_bin, f1_score),
-                "pr_auc": round(average_precision_score(y_bin, score), 4),
-                "roc_auc": round(roc_auc_score(y_bin, score), 4),
-                "ham_false_positive_rate": round(float(pred_bin[y_bin == 0].mean()), 4),
-                "ece": round(expected_calibration_error(y_bin, score), 4),
-            },
-            "new_2022_messages_macro_f1": round(f1_score(y[new_only], pred[new_only], average="macro"), 4),
-            "unlabelled_uci_spam_detection_rate": round(
-                float((malicious_score(model.predict_proba(list(unlabelled_spam.text))) >= 0.5).mean()), 4
-            ),
-            "latency_ms": latency_ms(model),
-            "size_mb": size_mb(name),
+    train, val = labelled[labelled.split == "train"], labelled[labelled.split == "val"]
+    scored = df[df.split.isin(["val", "test", "future", "external"])]
+    results = {
+        "test_size": {
+            d: scored[(scored.split == "test") & (scored.domain == d)].label.value_counts().to_dict()
+            for d in DOMAINS
         }
-
-        enron_score = malicious_score(model.predict_proba(list(enron.text)))
-        enron_y = (enron.label == "spam").to_numpy().astype(int)
-        r["enron_email"] = {
-            "roc_auc": round(roc_auc_score(enron_y, enron_score), 4),
-            "f1": round(f1_score(enron_y, enron_score >= 0.5), 4),
-        }
-
-        malicious = test[test.label != "ham"].text.tolist()
-        ham = test[test.label == "ham"].text.tolist()
-        r["robustness"] = {}
-        for attack in ATTACKS:
-            r["robustness"][attack] = {}
-            for rate in RATES:
-                adv = attack_all(malicious, attack, rate, seed=1)
-                recall = float((malicious_score(model.predict_proba(adv)) >= 0.5).mean())
-                r["robustness"][attack][str(rate)] = round(recall, 4)
-        # Obfuscated ham shouldn't suddenly look like spam either
-        r["robustness_ham_fpr_mixed_0.3"] = round(
-            float(
-                (malicious_score(model.predict_proba(attack_all(ham, "mixed", 0.3, seed=1))) >= 0.5).mean()
-            ),
-            4,
-        )
-        results["models"][name] = r
-        print(json.dumps({k: r[k] for k in ("macro_f1", "binary", "latency_ms")}), flush=True)
-
-    # Ablation: same tfidf_lr without the normaliser, to isolate what normalisation buys under attack
-    raw = TfidfLR(normalise_input=False).fit(list(train.text), list(train.label))
-    malicious = test[test.label != "ham"].text.tolist()
-    results["ablation_tfidf_lr_without_normaliser"] = {
-        attack: {
-            str(rate): round(
-                float(
-                    (
-                        malicious_score(raw.predict_proba(attack_all(malicious, attack, rate, seed=1))) >= 0.5
-                    ).mean()
-                ),
-                4,
-            )
-            for rate in RATES
-        }
-        for attack in ATTACKS
     }
+    results["future_size"] = int((scored.split == "future").sum())
+    results["models"], results["robustness"], results["latency_ms"], results["size_mb"] = {}, {}, {}, {}
+    predictions = {}
+
+    # -- baselines, trained here -------------------------------------------------
+    for model in [NBOriginal(), TfidfLR()]:
+        started = time.time()
+        model.fit(train.text, train.domain, train.label)
+        print(f"trained {model.name} in {time.time() - started:.0f}s", flush=True)
+        path = ARTIFACTS / f"{model.name}.joblib"
+        joblib.dump(model, path, compress=3)
+        proba = model.predict_proba(scored.text, scored.domain)
+        results["models"][model.name] = evaluate_predictions(scored, proba)
+        results["latency_ms"][model.name] = latency_ms(model)
+        results["size_mb"][model.name] = round(path.stat().st_size / 1e6, 1)
+        results["robustness"][model.name] = robustness(model, val)
+        predictions[model.name] = proba
+        print(model.name, {d: results["models"][model.name][d]["macro_f1"] for d in DOMAINS}, flush=True)
+
+    # What the normaliser buys under attack: same model, obfuscation left in
+    raw = TfidfLR(deobfuscate=False).fit(train.text, train.domain, train.label)
+    results["robustness"]["tfidf_lr_without_normaliser"] = robustness(raw, val)
+
+    # Cross-channel transfer for the baseline (the transformer's comes from the Colab runs)
+    results["transfer"] = {"tfidf_lr": {}}
+    for name, domains in [("sms", ["sms"]), ("email", ["email"]), ("sms-email", ["sms", "email"])]:
+        part = train[train.domain.isin(domains)]
+        m = TfidfLR().fit(part.text, part.domain, part.label)
+        proba = m.predict_proba(scored.text, scored.domain)
+        res = evaluate_predictions(scored, proba)
+        results["transfer"]["tfidf_lr"][name] = {d: res[d]["macro_f1"] for d in DOMAINS}
+
+    # -- transformer, from the Colab runs ---------------------------------------
+    tr = transformer_results(df)
+    if tr["seeds"]:
+        results["models"]["distilroberta"] = mean_over_seeds(tr["seeds"])
+        results["transformer_seeds"] = {
+            k: {d: v[d]["macro_f1"] for d in DOMAINS} | {"future": v["future"]["phishing_recall"]}
+            for k, v in tr["seeds"].items()
+        }
+        results["training_history"] = {k: v["history"] for k, v in tr["seeds"].items()}
+        results["transfer"]["distilroberta"] = {
+            "sms": tr["single_channel"].get("sms_seed0"),
+            "email": tr["single_channel"].get("email_seed0"),
+            "sms-email": {d: tr["seeds"]["sms-email_seed0"][d]["macro_f1"] for d in DOMAINS},
+        }
+        frame, proba = tr["predictions"]["sms-email_seed0"]
+        predictions["distilroberta"] = pd.DataFrame(proba, index=frame.index).reindex(scored.index).to_numpy()
+    if "final" in tr:
+        results["final_model"] = tr["final"]
+
+    # Robustness and speed of the model that actually ships (int8 ONNX of the final run)
+    onnx_dir = MODELS / "onnx"
+    if (onnx_dir / "model.onnx").exists() and json.loads((onnx_dir / "config.json").read_text())[
+        "labels"
+    ] == LABELS:
+        from .inference import ScamClassifier
+
+        deployed = ScamClassifier(onnx_dir)
+        results["robustness"]["distilroberta"] = robustness(deployed, val)
+        results["latency_ms"]["distilroberta"] = latency_ms(deployed)
+        results["size_mb"]["distilroberta"] = round((onnx_dir / "model.onnx").stat().st_size / 1e6, 1)
 
     results["leakage"] = leakage_experiment()
+    results["exais_ablation"] = exais_ablation(train, scored)
+
     REPORTS.mkdir(exist_ok=True)
     (REPORTS / "results.json").write_text(json.dumps(results, indent=2))
-    pd.DataFrame(preds).to_parquet(REPORTS / "test_predictions.parquet", index=False)
+    keep = scored[["split", "domain", "label", "source", "year", "future_novel"]].copy()
+    keep["no_hook"] = ~scored.prepared.str.contains(HOOKS)
+    for name, proba in predictions.items():
+        for i, label in enumerate(LABELS):
+            keep[f"{name}__p_{label}"] = proba[:, i]
+    keep.to_parquet(REPORTS / "test_predictions.parquet")
     print("wrote reports/results.json")
 
 

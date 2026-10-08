@@ -26,30 +26,34 @@
   },
   "campaigns_labelled_both_spam_and_phishing": 66,
   "final": {
+    "external/sms": {
+      "legit": 2319,
+      "spam": 1427
+    },
     "future/email": {
       "phishing": 1192
     },
     "test/email": {
       "legit": 2808,
-      "spam": 2275,
+      "spam": 2274,
       "phishing": 492
     },
     "test/sms": {
-      "legit": 1034,
-      "spam": 266,
+      "legit": 703,
       "phishing": 80,
-      "spam_unlabelled": 15
+      "spam": 62,
+      "spam_unlabelled": 14
     },
     "train/email": {
       "legit": 14042,
-      "spam": 11370,
+      "spam": 11371,
       "phishing": 2457
     },
     "train/sms": {
-      "legit": 5172,
-      "spam": 1328,
+      "legit": 3515,
       "phishing": 401,
-      "spam_unlabelled": 24
+      "spam": 310,
+      "spam_unlabelled": 29
     },
     "val/email": {
       "legit": 2808,
@@ -57,10 +61,10 @@
       "phishing": 491
     },
     "val/sms": {
-      "legit": 1034,
-      "spam": 266,
+      "legit": 703,
       "phishing": 81,
-      "spam_unlabelled": 11
+      "spam": 61,
+      "spam_unlabelled": 7
     }
   },
   "future_novel": 1153

@@ -1,28 +1,57 @@
 import * as ort from "onnxruntime-web";
 import { ScamClassifier } from "./scam.js";
 
-const MODEL_REPO = "https://huggingface.co/hamadurrehman62/sms-scam-distilroberta/resolve/main/";
-const CACHE = "sms-scam-model-v1";
+const HUB = "https://huggingface.co/hamadurrehman62/scam-detector-distilroberta/resolve/main/";
+// Local development: serve the repo root and open /web/, and the page uses the freshly exported model
+const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname) && location.pathname.startsWith("/web/");
+const MODEL_REPO = LOCAL ? "../models/onnx/" : HUB;
+const CACHE = LOCAL ? "scam-model-local" : "scam-model-v3";
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
 
 const $ = (id) => document.getElementById(id);
-const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
+const pct = (x, d = 1) => (x == null ? "n/a" : (x * 100).toFixed(d) + "%");
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const CLASSES = {
-  ham: { title: "Looks legitimate", cls: "ham" },
+  legit: { title: "Looks legitimate", cls: "legit" },
   spam: { title: "Marketing spam", cls: "spam" },
-  smishing: { title: "Smishing: likely a scam", cls: "smishing" },
+  phishing: { title: "Phishing: likely a scam", cls: "phishing" },
 };
 const MODEL_NAMES = {
-  distilroberta_aug: "DistilRoBERTa + attack augmentation",
-  distilroberta: "DistilRoBERTa",
-  minilm_lr: "MiniLM embeddings + LR",
-  tfidf_lr: "TF-IDF word+char + LR",
-  nb_original: "Naive Bayes (original notebook)",
+  distilroberta: "DistilRoBERTa (fine-tuned, this demo)",
+  tfidf_lr: "TF-IDF word+char + logistic regression",
+  nb_original: "Naive Bayes (my original notebook)",
+};
+const EXAMPLES = {
+  sms: [
+    ["Parcel fee", "Royal Mail: your parcel is on hold due to an unpaid £1.99 shipping fee. Pay now to avoid return: royalmail-redelivery-uk.com"],
+    ["Bank alert", "HSBC: A new payee was added to your account. If this was NOT you, call our fraud team immediately on 07418 355612"],
+    ["Obfuscated", "Y0ur acc0unt has been l0cked. Ver1fy y0ur det4ils at secure-l0gin.net within 24hrs"],
+    ["Promo", "50% off all pizzas this weekend only! Order online with code WKND50. Txt STOP to opt out"],
+    ["Friend", "Running 10 mins late, grab us a table and I'll be there soon"],
+  ],
+  email: [
+    [
+      "Password expiry",
+      "Subject: Action required: your Microsoft 365 password expires today\n\nDear user,\n\nYour mailbox password will expire in 24 hours. To keep using your account without interruption, confirm your current password using the secure link below.\n\nhttps://m365-account-verify.top/login\n\nIf you do not act now your mailbox will be suspended and incoming messages deleted.\n\nIT Support Team",
+    ],
+    [
+      "Invoice",
+      "Subject: Outstanding invoice INV-20931 - payment overdue\n\nHello,\n\nPlease find your overdue invoice attached. Our records show £2,450.00 remains unpaid. To avoid late fees, settle the balance today via our secure payment portal: https://docs-invoice-pay.com/inv20931\n\nKind regards,\nAccounts Receivable",
+    ],
+    [
+      "Newsletter",
+      "Subject: Spring sale: 30% off everything this weekend\n\nHi there,\n\nOur spring sale starts Friday. Get 30% off all garden furniture and free delivery on orders over £50. Shop now before stocks run out.\n\nYou are receiving this email because you signed up at our store. Unsubscribe at any time.",
+    ],
+    [
+      "Colleague",
+      "Subject: Notes from Tuesday's project meeting\n\nHi all,\n\nThanks for joining on Tuesday. Main actions: Priya will share the updated timeline by Friday, and I'll book a room for the client review next week. Let me know if I've missed anything.\n\nBest,\nTom",
+    ],
+  ],
 };
 
 let clf;
+let domain = "sms";
 
 // The model is 82 MB, so keep it in Cache Storage rather than trusting the HTTP cache.
 async function fetchModel(onProgress) {
@@ -37,18 +66,23 @@ async function fetchModel(onProgress) {
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`model download failed (${res.status})`);
-  const total = Number(res.headers.get("content-length")) || 82_522_752;
+  const total = Number(res.headers.get("content-length")) || 82_500_000;
   const reader = res.body.getReader();
-  const bytes = new Uint8Array(total);
+  const chunks = [];
   let received = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    bytes.set(value, received);
+    chunks.push(value);
     received += value.length;
-    onProgress(received / total);
+    onProgress(Math.min(received / total, 1));
   }
-  const model = bytes.subarray(0, received);
+  const model = new Uint8Array(received);
+  let offset = 0;
+  for (const c of chunks) {
+    model.set(c, offset);
+    offset += c.length;
+  }
   try {
     await cache?.put(url, new Response(model));
   } catch {
@@ -65,20 +99,38 @@ async function load() {
   const [config, tokenizerJson, card, modelBytes] = await Promise.all([
     fetch(MODEL_REPO + "config.json").then((r) => r.json()),
     fetch(MODEL_REPO + "tokenizer.json").then((r) => r.json()),
-    fetch(MODEL_REPO + "metrics.json").then((r) => r.json()),
+    fetch(MODEL_REPO + "metrics.json").then((r) => (r.ok ? r.json() : null)),
     fetchModel(progress),
   ]);
   $("load-text").textContent = "Starting the model…";
   clf = await ScamClassifier.create({ modelBytes, tokenizerJson, config });
-  renderCard(card);
+  if (card) renderCard(card);
+  else $("model-desc").textContent = "Model card not available.";
   $("loader").hidden = true;
   $("go").disabled = false;
 
-  const shared = new URLSearchParams(location.search).get("text");
-  if (shared) {
-    $("msg").value = shared;
+  const params = new URLSearchParams(location.search);
+  if (params.get("text")) {
+    setDomain(params.get("type") === "email" ? "email" : "sms");
+    $("msg").value = params.get("text");
     check();
   }
+}
+
+function setDomain(d) {
+  domain = d;
+  for (const b of document.querySelectorAll(".seg-btn")) {
+    const on = b.dataset.domain === d;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", String(on));
+  }
+  $("msg").placeholder =
+    d === "sms" ? "e.g. Royal Mail: your parcel is on hold. Pay £1.99 at royalmail-redelivery.com" : "Paste the subject line and body of an email";
+  $("msg").rows = d === "sms" ? 4 : 9;
+  $("examples").innerHTML =
+    '<span class="muted small">Try:</span>' +
+    EXAMPLES[d].map(([name, text], i) => `<button class="chip" data-i="${i}" title="${esc(text.slice(0, 120))}">${name}</button>`).join("");
+  $("result").hidden = true;
 }
 
 async function check() {
@@ -86,14 +138,16 @@ async function check() {
   if (!text) return $("msg").focus();
   if (!clf) return;
   $("go").disabled = true;
+  $("go").textContent = domain === "email" ? "Checking… (a few seconds)" : "Checking…";
   try {
     const started = performance.now();
-    const r = await clf.classify(text);
+    const r = await clf.classify(text, { domain });
     render(text, r, performance.now() - started);
   } catch (err) {
     alert("Something went wrong: " + err.message);
   } finally {
     $("go").disabled = false;
+    $("go").textContent = "Check";
   }
 }
 
@@ -129,43 +183,50 @@ function render(text, r, ms) {
           <span class="n">${e.impact > 0 ? "+" : ""}${e.impact.toFixed(2)}</span></li>`)
         .join("")
     : '<li class="muted">No single word moves the decision much. The verdict comes from the message as a whole.</li>';
-  $("timing").textContent = `Computed on your device in ${Math.round(ms)} ms.`;
+  const scope = domain === "email" ? " For emails, only the first 60 words are explained." : "";
+  $("timing").textContent = `Computed on your device in ${Math.round(ms)} ms.${scope}`;
   $("result").hidden = false;
 }
 
 function renderCard(c) {
-  const o = c.onnx;
+  const m = c.models[c.headline_model];
   $("model-desc").textContent =
-    `${MODEL_NAMES[c.final_model]}, quantised to int8 ONNX (${o.onnx_size_mb} MB). ` +
-    `Tested on ${c.test_messages.toLocaleString()} messages from spam campaigns it never saw during training.`;
+    `Fine-tuned DistilRoBERTa, quantised to int8 ONNX (${c.onnx.onnx_size_mb} MB). Scores are the mean of ${c.n_seeds} training runs, ` +
+    `tested on spam campaigns the model never saw: ${Object.values(c.test_size.sms).reduce((a, b) => a + b, 0).toLocaleString()} texts and ` +
+    `${Object.values(c.test_size.email).reduce((a, b) => a + b, 0).toLocaleString()} emails.`;
   $("tiles").innerHTML = [
-    ["Macro-F1 (3 classes)", pct(o.test_macro_f1)],
-    ["Scams caught", pct(o.test_scam_recall)],
-    ["Smishing recall", pct(o.test_smishing_recall)],
-    ["Real texts flagged", pct(o.test_ham_false_positive_rate, 2)],
-    ["Robust @30% obfuscation", pct(c.models[c.final_model].robustness.mixed["0.3"])],
+    ["SMS macro-F1", pct(m.sms.macro_f1)],
+    ["Email macro-F1", pct(m.email.macro_f1)],
+    ["Real texts flagged (UCI/Mendeley)", pct(m.sms_uci_mendeley.legit_false_positive_rate, 2)],
+    ["Real emails flagged", pct(m.email.legit_false_positive_rate, 2)],
+    ["2023-25 phishing caught", pct(m.future_scam_recall)],
   ]
     .map(([k, v]) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`)
     .join("");
   $("cmp").innerHTML =
-    "<tr><th>Model</th><th>Macro-F1</th><th>Scam F1</th><th>Robustness</th><th>Size</th></tr>" +
+    "<tr><th>Model</th><th>SMS macro-F1</th><th>Email macro-F1</th><th>2023-25 phishing</th><th>Size</th></tr>" +
     Object.entries(c.models)
-      .sort((a, b) => b[1].macro_f1 - a[1].macro_f1)
-      .map(([n, s]) => `<tr class="${n === c.final_model ? "best" : ""}"><td>${MODEL_NAMES[n] || n}</td>
-        <td>${pct(s.macro_f1)}</td><td>${pct(s.binary.f1)}</td><td>${pct(s.robustness.mixed["0.3"])}</td><td>${s.size_mb} MB</td></tr>`)
+      .sort((a, b) => b[1].sms.macro_f1 + b[1].email.macro_f1 - a[1].sms.macro_f1 - a[1].email.macro_f1)
+      .map(
+        ([n, s]) => `<tr class="${n === c.headline_model ? "best" : ""}"><td>${MODEL_NAMES[n] || n}</td>
+        <td>${pct(s.sms.macro_f1)}</td><td>${pct(s.email.macro_f1)}</td><td>${pct(s.future_scam_recall)}</td><td>${s.size_mb ?? "n/a"} MB</td></tr>`,
+      )
       .join("");
 }
 
+for (const b of document.querySelectorAll(".seg-btn")) b.addEventListener("click", () => setDomain(b.dataset.domain));
 $("go").addEventListener("click", check);
 $("msg").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) check();
 });
 $("examples").addEventListener("click", (e) => {
-  if (!e.target.dataset.text) return;
-  $("msg").value = e.target.dataset.text;
+  const i = e.target.dataset.i;
+  if (i === undefined) return;
+  $("msg").value = EXAMPLES[domain][i][1];
   check();
 });
 
+setDomain("sms");
 load().catch((err) => {
   $("load-text").textContent = "Couldn't load the model: " + err.message;
   $("load-bar").style.background = "var(--spam)";

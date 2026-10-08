@@ -1,11 +1,14 @@
 {
   "labels": [
-    "ham",
+    "legit",
     "spam",
-    "smishing"
+    "phishing"
   ],
-  "temperature": 1.8707696199417114,
-  "max_len": 96,
+  "temperature": 1.9680798053741455,
+  "max_len": {
+    "sms": 96,
+    "email": 256
+  },
   "base_model": "distilroberta-base",
-  "trained_variant": "distilroberta_aug"
+  "trained_on": "train + test + future splits (see reports/REPORT.md)"
 }

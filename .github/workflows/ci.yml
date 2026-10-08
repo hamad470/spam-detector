@@ -21,7 +21,7 @@ jobs:
       - name: Fetch the published model
         run: |
           python -c "from huggingface_hub import snapshot_download; \
-          snapshot_download('hamadurrehman62/sms-scam-distilroberta', local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])" \
+          snapshot_download('hamadurrehman62/scam-detector-distilroberta', local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])" \
           || echo "::warning::model not on the Hub yet, model tests will be skipped"
       - name: Python tests
         run: pytest -q -rs

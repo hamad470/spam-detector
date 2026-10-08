@@ -6,7 +6,7 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    MODEL_REPO=hamadurrehman62/sms-scam-distilroberta
+    MODEL_REPO=hamadurrehman62/scam-detector-distilroberta
 WORKDIR /home/user/app
 
 COPY --chown=user requirements.txt .
@@ -22,6 +22,7 @@ RUN python -c "import os; from huggingface_hub import snapshot_download; \
 snapshot_download(os.environ['MODEL_REPO'], local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])"
 
 COPY --chown=user app ./app
+COPY --chown=user web/index.html web/app.js web/scam.js web/style.css ./web/
 ENV MODEL_DIR=/home/user/app/models/onnx
 
 EXPOSE 7860
