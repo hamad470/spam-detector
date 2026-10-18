@@ -3,104 +3,104 @@
   "n_seeds": 3,
   "test_size": {
     "sms": {
-      "legit": 1034,
-      "spam": 266,
+      "legit": 703,
       "phishing": 80,
-      "spam_unlabelled": 15
+      "spam": 62,
+      "spam_unlabelled": 14
     },
     "email": {
       "legit": 2808,
-      "spam": 2275,
+      "spam": 2274,
       "phishing": 492
     }
   },
   "future_size": 1192,
   "onnx": {
-    "decision_agreement": 0.996,
-    "max_abs_prob_diff": 0.811,
-    "median_abs_prob_diff": 0.00032,
+    "decision_agreement": 0.9956,
+    "max_abs_prob_diff": 0.4425,
+    "median_abs_prob_diff": 0.00048,
     "onnx_size_mb": 82.5,
     "pytorch_size_mb": 328.5,
-    "n": 6954,
-    "latency_ms": 7.77
+    "n": 6418,
+    "latency_ms": 8.51
   },
   "models": {
     "nb_original": {
       "sms": {
-        "macro_f1": 0.4495,
-        "scam_f1": 0.2256,
-        "legit_false_positive_rate": 0.0077,
-        "phishing_recall": 0.2
+        "macro_f1": 0.4479,
+        "scam_f1": 0.2469,
+        "legit_false_positive_rate": 0.0,
+        "phishing_recall": 0.1625
       },
       "email": {
-        "macro_f1": 0.8935,
-        "scam_f1": 0.9159,
-        "legit_false_positive_rate": 0.0548,
-        "phishing_recall": 0.8496
+        "macro_f1": 0.8907,
+        "scam_f1": 0.9205,
+        "legit_false_positive_rate": 0.062,
+        "phishing_recall": 0.8699
       },
       "sms_uci_mendeley": {
-        "macro_f1": 0.5174,
-        "scam_f1": 0.3708,
-        "legit_false_positive_rate": 0.0042,
-        "phishing_recall": 0.2
+        "macro_f1": 0.4479,
+        "scam_f1": 0.2469,
+        "legit_false_positive_rate": 0.0,
+        "phishing_recall": 0.1625
       },
-      "future_phishing_recall": 0.7668,
-      "future_scam_recall": 0.8414,
-      "robust_sms_mixed_30": 0.1124,
+      "future_phishing_recall": 0.7836,
+      "future_scam_recall": 0.8574,
+      "robust_sms_mixed_30": 0.0563,
       "size_mb": 0.1
     },
     "tfidf_lr": {
       "sms": {
-        "macro_f1": 0.8379,
-        "scam_f1": 0.828,
-        "legit_false_positive_rate": 0.0542,
-        "phishing_recall": 0.7875
+        "macro_f1": 0.8484,
+        "scam_f1": 0.9485,
+        "legit_false_positive_rate": 0.0014,
+        "phishing_recall": 0.8875
       },
       "email": {
-        "macro_f1": 0.97,
-        "scam_f1": 0.9877,
-        "legit_false_positive_rate": 0.0114,
-        "phishing_recall": 0.9553
+        "macro_f1": 0.9669,
+        "scam_f1": 0.9865,
+        "legit_false_positive_rate": 0.0146,
+        "phishing_recall": 0.9451
       },
       "sms_uci_mendeley": {
-        "macro_f1": 0.8596,
-        "scam_f1": 0.9441,
-        "legit_false_positive_rate": 0.0127,
-        "phishing_recall": 0.7875
+        "macro_f1": 0.8484,
+        "scam_f1": 0.9485,
+        "legit_false_positive_rate": 0.0014,
+        "phishing_recall": 0.8875
       },
-      "future_phishing_recall": 0.8867,
-      "future_scam_recall": 0.9471,
-      "robust_sms_mixed_30": 0.8156,
+      "future_phishing_recall": 0.8918,
+      "future_scam_recall": 0.9522,
+      "robust_sms_mixed_30": 0.8873,
       "size_mb": 15.1
     },
     "distilroberta": {
       "sms": {
-        "macro_f1": 0.8308,
-        "scam_f1": 0.8671,
-        "legit_false_positive_rate": 0.0667,
-        "phishing_recall": 0.7417
+        "macro_f1": 0.8573,
+        "scam_f1": 0.9676,
+        "legit_false_positive_rate": 0.0023,
+        "phishing_recall": 0.8792
       },
       "email": {
-        "macro_f1": 0.9757,
-        "scam_f1": 0.9876,
-        "legit_false_positive_rate": 0.0069,
-        "phishing_recall": 0.9533
+        "macro_f1": 0.9691,
+        "scam_f1": 0.9862,
+        "legit_false_positive_rate": 0.0073,
+        "phishing_recall": 0.9553
       },
       "sms_uci_mendeley": {
-        "macro_f1": 0.829,
-        "scam_f1": 0.9573,
-        "legit_false_positive_rate": 0.0061,
-        "phishing_recall": 0.7417
+        "macro_f1": 0.8573,
+        "scam_f1": 0.9676,
+        "legit_false_positive_rate": 0.0023,
+        "phishing_recall": 0.8792
       },
-      "future_phishing_recall": 0.8982,
-      "future_scam_recall": 0.9432,
-      "robust_sms_mixed_30": 0.902,
+      "future_phishing_recall": 0.9063,
+      "future_scam_recall": 0.9508,
+      "robust_sms_mixed_30": 0.9718,
       "size_mb": 82.5
     }
   },
   "shortcut_audit": {
-    "as_packaged": 0.9379699248120301,
-    "raw": 0.4041353383458647,
-    "scrubbed": 0.14849624060150377
+    "as_packaged": 0.9465930018416207,
+    "raw": 0.5156537753222836,
+    "scrubbed": 0.15285451197053407
   }
 }

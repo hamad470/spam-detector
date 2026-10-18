@@ -58,18 +58,18 @@ SpamAssassin's legitimate mail, which the model never saw.
 
 | Step | SpamAssassin legit flagged as phishing |
 |---|---:|
-| As downloaded | 93.8% |
-| Enron packaging undone | 40.4% |
-| Fingerprints scrubbed | 14.8% |
+| As downloaded | 94.7% |
+| Enron packaging undone | 51.6% |
+| Fingerprints scrubbed | 15.3% |
 
 The remaining gap is a genuine topic difference (Enron was an energy company: "gas", "energy" stay strong
 legitimate signals) and is listed as a limitation.
 
 **4. Datasets disagree on what spam is.** ExAIS labels carrier service notices, Facebook birthday alerts
 and motivational-quote subscriptions as spam, and some prize-draw promotions as ham
-("If you don't text YES to 7070, you won't enter MTN's N2,0,000 cash draw!" is labelled ham). Despite that,
-training on it improves the cleanly labelled SMS (see the report), so it stays in, and SMS results are
-reported separately for UCI/Mendeley and ExAIS.
+("If you don't text YES to 7070, you won't enter MTN's N2,0,000 cash draw!" is labelled ham). Training on it
+made ordinary service texts (one-time codes, delivery updates) look like spam, so **ExAIS is never trained
+on**: it is kept whole as an external test set.
 
 **5. Smaller issues.**
 - 7,007 exact duplicates across all sources, 87 of them with conflicting labels (the more severe label is kept).
@@ -80,20 +80,22 @@ reported separately for UCI/Mendeley and ExAIS.
 
 ## Splits
 
-- **train / val / test** (~70/15/15): split by campaign cluster with `StratifiedGroupKFold`, stratified on
-  channel and label, so no campaign appears in two splits.
+- **train / val / test** (~70/15/15, UCI/Mendeley SMS and all email): split by campaign cluster with
+  `StratifiedGroupKFold`, stratified on channel and label, so no campaign appears in two splits.
 - **future**: all Nazario phishing from 2023-2025 (1,192 emails), never used for training in the evaluated
   models. 1,153 of them belong to campaigns with no older relative ("future_novel").
+- **external**: all of ExAIS (3,746 SMS), never trained on.
 
 | split | channel | legit | spam | phishing | spam (no subtype) |
 |---|---|---:|---:|---:|---:|
-| train | SMS | 5,172 | 1,328 | 401 | 24 |
-| train | email | 14,042 | 11,370 | 2,457 | |
-| val | SMS | 1,034 | 266 | 81 | 11 |
+| train | SMS | 3,515 | 310 | 401 | 29 |
+| train | email | 14,042 | 11,371 | 2,457 | |
+| val | SMS | 703 | 61 | 81 | 7 |
 | val | email | 2,808 | 2,274 | 491 | |
-| test | SMS | 1,034 | 266 | 80 | 15 |
-| test | email | 2,808 | 2,275 | 492 | |
+| test | SMS | 703 | 62 | 80 | 14 |
+| test | email | 2,808 | 2,274 | 492 | |
 | future | email | | | 1,192 | |
+| external (ExAIS) | SMS | 2,319 | 1,427 | | |
 
 Columns in `corpus.parquet`: `text`, `label`, `domain` (sms/email), `source`, `year`, `group` (campaign
 cluster), `split`, `future_novel`, and `text_as_packaged` (Enron as downloaded, kept for the audit).

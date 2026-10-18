@@ -188,12 +188,15 @@ function render(text, r, ms) {
   $("result").hidden = false;
 }
 
+// spam_unlabelled has no 3-class label, so it isn't part of the headline test sets
+const count = (sizes) => ["legit", "spam", "phishing"].reduce((n, k) => n + (sizes[k] || 0), 0);
+
 function renderCard(c) {
   const m = c.models[c.headline_model];
   $("model-desc").textContent =
     `Fine-tuned DistilRoBERTa, quantised to int8 ONNX (${c.onnx.onnx_size_mb} MB). Scores are the mean of ${c.n_seeds} training runs, ` +
-    `tested on spam campaigns the model never saw: ${Object.values(c.test_size.sms).reduce((a, b) => a + b, 0).toLocaleString()} texts and ` +
-    `${Object.values(c.test_size.email).reduce((a, b) => a + b, 0).toLocaleString()} emails.`;
+    `tested on spam campaigns the model never saw: ${count(c.test_size.sms).toLocaleString()} texts and ` +
+    `${count(c.test_size.email).toLocaleString()} emails.`;
   $("tiles").innerHTML = [
     ["SMS macro-F1", pct(m.sms.macro_f1)],
     ["Email macro-F1", pct(m.email.macro_f1)],

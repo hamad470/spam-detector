@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spam-detector"
-version = "2.0.0"
-description = "Ham / spam / smishing SMS classifier with a leakage-aware evaluation, obfuscation robustness and an ONNX FastAPI service"
+version = "3.0.0"
+description = "Legit / spam / phishing classifier for SMS and email: data and shortcut audits, campaign-aware evaluation, in-browser ONNX demo"
 authors = [{ name = "Hamad Ur Rehman" }]
 readme = "README.md"
 requires-python = ">=3.10"

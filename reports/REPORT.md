@@ -1,237 +1,273 @@
-# Detecting SMS scams honestly: leakage, campaigns and obfuscation
+# Detecting SMS and email scams honestly: fingerprints, campaigns and what the data can't teach
 
 Hamad Ur Rehman · October 2026 · [code](https://github.com/hamad470/spam-detector) ·
 [live demo](https://huggingface.co/spaces/hamadurrehman62/spam-detector) ·
-[model](https://huggingface.co/hamadurrehman62/sms-scam-distilroberta)
+[model](https://huggingface.co/hamadurrehman62/scam-detector-distilroberta)
 
 ## Summary
 
-I rebuilt a 2024 Naive Bayes SMS spam notebook into a three-class scam detector (ham, marketing spam,
-smishing). Most of the work turned out to be in the data and the evaluation, not the model:
+I extended a 2024 Naive Bayes SMS spam notebook into a three-class scam detector (legit, spam, phishing)
+for SMS and email, trained on six public datasets spanning 2004-2025. Most of the work went into the data
+and the evaluation:
 
-- The 2022 smishing dataset I added is 85% copies of the 2011 dataset, and half of all spam comes from
-  templated campaigns. A naive merge with a random split leaks exact copies of 78% of test messages into training.
-- With campaigns held out of training, the fine-tuned DistilRoBERTa reaches **0.920 macro-F1**, catches
-  **97.9% of scams**, flags **0.42% of real texts** and recalls **93.8% of smishing**. It's an
-  82.5 MB int8 ONNX model that runs in the browser.
-- Training on obfuscated copies of messages helped more on clean data than I expected (macro-F1 0.870 to 0.921),
-  and a rule-based normaliser does most of the work against disguised text.
-- The model doesn't generalise to email, and it misses scams that have no link, prize or number.
+- **Every email corpus carries a fingerprint and a single label.** A model trained on raw data passed the
+  usual held-out test while flagging 94.7% of legitimate email from an unseen source as phishing. Scrubbing
+  the fingerprints brought that to 15.3%.
+- **Spam comes in campaigns, and public datasets copy each other.** Splitting by near-duplicate campaign
+  instead of at random removes leakage that inflates F1 from 0.970 to 0.993.
+- **Datasets define spam differently.** One SMS dataset's labels conflict with the others, and training on
+  it made ordinary service texts look like spam; it is used only as an external test.
+- **Results:** the fine-tuned DistilRoBERTa catches 94.8% of SMS scams and 98.0% of email scams while flagging
+  0.23% and 0.73% of legitimate messages, and catches 95.1% of phishing emails written after its training
+  data. A strong TF-IDF baseline is within the confidence interval on clean text; the transformer is better
+  on false alarms, recall and disguised text.
+- **What it can't do:** it flags genuine service messages (codes, deliveries, bank alerts) because no public
+  dataset contains them, and misses scams with no link or money. That needs new data, not a new model.
 
 ## 1. Data
 
-| Source | Messages | Labels |
-|---|---:|---|
-| UCI SMS Spam Collection, 2011 | 5,572 | ham, spam |
-| Mishra & Soni SMS Phishing Dataset, 2022 | 5,971 | ham, spam, smishing |
-| Enron-Spam (test split only) | 2,000 | ham, spam (email) |
+| Source | Channel | Years | Unique, English | Labels | Role |
+|---|---|---|---:|---|---|
+| UCI SMS Spam Collection | SMS | ~2003-2011 | } 5,966 | ham, spam | train / test |
+| Mishra & Soni SMS Phishing Dataset | SMS | to 2022 | | ham, spam, smishing | train / test |
+| ExAIS_SMS (Nigeria) | SMS | 2010-2016 | 3,746 | ham, spam | **external test only** |
+| Enron-Spam | email | 1999-2005 | 30,055 | ham, spam | train / test |
+| SpamAssassin public corpus | email | 2002-2005 | 5,522 | ham, hard ham, spam | train / test |
+| Nazario phishing corpus | email | 2004-2025 | 4,632 | phishing | train / test / **future** |
 
-![Data audit](figures/data_audit.png)
+![Data overview](figures/data_overview.png)
 
-**Overlap.** After repairing mojibake with `ftfy` and matching on letters and digits only, 4,942 of the 5,823
-unique Mendeley messages are UCI messages. The broken encoding (`Â£` for `£`) is why a plain string match
-misses this. Only 881 Mendeley messages are new.
+Labels are unified as **legit** (ham, hard ham), **spam** (unwanted marketing) and **phishing** (Mendeley
+smishing, all of Nazario). The full audit is in the [data card](../data/README.md); the parts that change the
+results are below.
 
-**A damaged mirror.** The UCI copy most people download from Kaggle escapes quotes as `\"` and cuts 44 messages
-off at the first quote. I only noticed because a reproducibility check against the official UCI zip didn't match.
-Everything here uses the official file.
+**Copies.** 85% of the Mendeley dataset (4,943 of 5,824 unique messages) is UCI with broken encoding.
+Across all sources there are 7,007 exact duplicates, 87 of them labelled differently.
 
-**Campaigns.** I clustered messages with MinHash LSH (5-character shingles, digits masked to 0, Jaccard ≥ 0.7).
-51% of spam and smishing sit in a cluster with at least one other message, against 7% of ham. These are the same
-prize draw or ringtone offer sent with a different short code.
+**Campaigns.** MinHash clustering (5-character shingles, digits masked, Jaccard ≥ 0.7) puts 62% of SMS
+phishing and 45% of email phishing in a near-duplicate cluster, against 12-15% of legitimate messages.
+Train, validation and test (~70/15/15) are split by cluster with `StratifiedGroupKFold`.
 
-**Label noise.** 35 Mendeley messages appear twice with different labels, and 23 campaign clusters contain
-copies labelled spam and copies labelled smishing. That puts a ceiling on how cleanly any model can separate
-the two scam classes.
+**Future test.** All Nazario phishing from 2023-2025 (1,192 emails, 1,153 from campaigns with no older
+relative) is held out from the evaluated models.
 
-**Final corpus.** 6,006 unique messages: 4,961 ham, 433 spam, 562 smishing, plus 50 UCI spam messages with no
-subtype. Those 50 are excluded from three-class training and only used to check that they're flagged as scams.
-The split is made per cluster with `StratifiedGroupKFold` (roughly 70/15/15), so no campaign appears in two splits.
+**Left out.** One Nazario mailbox that Windows Defender quarantines for live malware; 152 non-English emails
+(there is no non-English legitimate email, so they would teach "non-English = phishing").
 
 ## 2. How much does leakage matter?
 
-Same model (TF-IDF + logistic regression), same binary task, three protocols:
+TF-IDF + logistic regression, UCI + Mendeley SMS, scam vs legit:
 
-| Protocol | Scam F1 |
+| Protocol | F1 |
 |---|---:|
 | Concatenate both datasets, random split (3 seeds) | 0.993 ± 0.006 |
-| Exact de-duplication first, random split (3 seeds) | 0.974 ± 0.008 |
-| Exact + near-duplicate grouping, split by campaign | 0.972 |
+| Exact de-duplication, random split (3 seeds) | 0.970 ± 0.011 |
+
+Under the naive protocol, 78% of test messages have an exact copy in training.
 
 ![Leakage](figures/leakage.png)
 
-Almost all of the inflation comes from exact copies: under the naive protocol 78% of test messages are already
-in the training set. Near-duplicate grouping costs a further 0.002, which is inside the noise for this model.
-I kept it anyway: it's the protocol that matches deployment, where next week's campaign is new, and the
-difference may be larger for models that memorise more.
+## 3. The shortcut audit
 
-## 3. Models
+Nazario is 100% phishing; Enron and SpamAssassin legitimate mail is 100% legit. Anything that identifies the
+corpus therefore predicts the label. I found three such fingerprints:
 
-All five use the same split and are scored on the same 851 test messages.
+- Enron-Spam was packaged lower-cased with a space around every punctuation mark
+  (`http : / / www . removeyou . com`, `it ' s`).
+- `jose@monkey.org`, the inbox Nazario collected from, appears in 26% of its emails.
+- SpamAssassin's legitimate mail is mostly tech mailing lists (list tags, footers).
 
-| Model | What it is |
+**The test:** train legit-vs-phishing on Enron legit + Nazario only, then score SpamAssassin legitimate mail,
+which the model never saw. A model that learned "looks like Enron = legit" will flag it.
+
+| Text the model sees | Enron legit flagged (seen source) | SpamAssassin legit flagged (unseen) | Phishing caught |
+|---|---:|---:|---:|
+| As downloaded | 0.0% | **94.7%** | 99.0% |
+| Enron packaging undone | 0.0% | 51.6% | 98.6% |
+| + addresses, names, list footers, years scrubbed | 0.5% | **15.3%** | 96.7% |
+
+![Shortcut audit](figures/shortcut_audit.png)
+
+On the usual held-out test the raw model looks perfect. Its strongest phishing feature was the collector's
+email address. After scrubbing, the strongest features are *account, ebay, security, bank* and links. The
+remaining 15% is a genuine topic gap (Enron was an energy company, so "gas" and "energy" stay legitimate
+signals) and is the main reason real-world false alarms remain a limitation.
+
+## 4. Datasets disagree on what spam is
+
+ExAIS labels carrier service notices ("your data plan has expired", "your request is being processed"),
+Facebook birthday alerts and motivational-quote subscriptions as spam, while some prize-draw promotions are
+labelled ham. I first kept it in training, because a TF-IDF ablation showed it improved the cleanly labelled
+SMS test. Handwritten probes then showed the cost: trained on ExAIS, a TF-IDF model scored a one-time-passcode
+text at 68% scam (18% without it). On the final split the ablation also turned against it:
+
+| TF-IDF + LR trained… | UCI/Mendeley SMS macro-F1 | false alarms | scams caught |
+|---|---:|---:|---:|
+| without ExAIS (protocol) | **0.848** | **0.14%** | 90.9% |
+| with ExAIS added | 0.827 | 0.71% | 92.3% |
+
+ExAIS is now an external test only. Scored on it, the transformer flags 33% of its "legitimate" messages and
+catches 64% of its "spam" (macro-F1 0.62): a measure of how much the label definition differs, not a target.
+
+## 5. Models
+
+All models get the same `prepare()` text: obfuscation undone, emails scrubbed as above, links, phone numbers,
+addresses, amounts and years tagged, and a channel prefix (`[sms]`, `[email]`).
+
+| Model | Notes |
 |---|---|
 | Naive Bayes | My original notebook: stemming, TF-IDF (3,000 terms), chi-squared top 1,000, Bernoulli NB |
-| TF-IDF + LR | Word 1-2-grams and character 2-5-grams, normalised text, class-balanced logistic regression |
-| MiniLM + LR | Frozen `all-MiniLM-L6-v2` sentence embeddings, logistic regression |
-| DistilRoBERTa | `distilroberta-base` fine-tuned, 4 epochs, square-root class weights, early stopping on validation macro-F1 |
-| DistilRoBERTa + aug. | As above, plus an obfuscated copy of every scam message and of 20% of ham |
+| TF-IDF + LR | Word 1-2-grams and character 2-5-grams, class-balanced logistic regression |
+| DistilRoBERTa | `distilroberta-base`, 3 epochs, sqrt class weights, channel-balanced sampling, obfuscation augmentation, temperature scaling; 3 seeds on a Colab T4 |
 
-Every model except Naive Bayes sees text through the same `prepare()` step: undo leetspeak, Cyrillic
-look-alikes, spaced-out letters and zero-width characters, then replace links, phone numbers and amounts with
-tags. Naive Bayes keeps its original preprocessing so it stays a faithful baseline.
+The scam decision is made first (P(spam) + P(phishing) ≥ 0.5), then the type. Early stopping uses the mean of
+SMS and email validation macro-F1, so the 4x larger email set can't hide an SMS regression.
 
-The decision rule is the same for all models: flag as a scam if P(spam) + P(smishing) ≥ 0.5, then pick the more
-likely scam type. Plain argmax over three classes can call a message ham while 59% of its probability says scam.
+## 6. Results
 
-## 4. Results
+Campaign-held-out test: 845 SMS (UCI/Mendeley) and 5,574 emails. DistilRoBERTa: mean ± std over 3 seeds.
 
-| Model | Macro-F1 (95% CI) | Scam F1 | Precision | Recall | Real texts flagged | Smishing recall | PR-AUC |
-|---|---|---:|---:|---:|---:|---:|---:|
-| **DistilRoBERTa + aug.** | **0.921** (0.887–0.953) | **0.975** | 0.979 | 0.972 | 0.42% | **93.8%** | **0.998** |
-| Naive Bayes | 0.908 (0.873–0.940) | 0.941 | **0.992** | 0.894 | **0.14%** | 86.3% | 0.983 |
-| TF-IDF + LR | 0.896 (0.858–0.933) | 0.972 | 0.972 | 0.972 | 0.56% | 88.7% | 0.994 |
-| DistilRoBERTa | 0.870 (0.824–0.908) | 0.955 | 0.933 | **0.979** | 1.41% | 80.0% | 0.995 |
-| MiniLM + LR | 0.817 (0.773–0.860) | 0.876 | 0.798 | 0.972 | 4.94% | 82.5% | 0.985 |
-
-Confidence intervals are 1,000-sample bootstraps over test messages.
+| | Naive Bayes | TF-IDF + LR | DistilRoBERTa |
+|---|---:|---:|---:|
+| **SMS** macro-F1 (95% CI) | 0.448 | 0.848 (0.797-0.892) | **0.857** ± 0.020 (0.814-0.909) |
+| SMS scam F1 | 0.247 | 0.949 | **0.968** |
+| SMS scams caught | 14.1% | 90.9% | **94.8%** |
+| SMS legitimate flagged | 0.00% | **0.14%** | 0.23% |
+| **Email** macro-F1 (95% CI) | 0.891 | 0.967 (0.960-0.973) | **0.969** ± 0.004 (0.968-0.979) |
+| Email scams caught | 90.6% | **98.8%** | 98.0% |
+| Email legitimate flagged | 6.2% | 1.46% | **0.73%** |
+| Calibration error (ECE), SMS / email | 0.141 / 0.060 | 0.018 / 0.013 | **0.004 / 0.008** |
 
 ![Model comparison](figures/model_comparison.png)
-
 ![Confusion matrices](figures/confusion_matrices.png)
+![PR curves and calibration](figures/pr_and_calibration.png)
 
-![Precision-recall](figures/pr_curves.png)
+- **On clean text, TF-IDF is within the transformer's confidence interval.** The transformer's advantages
+  are fewer email false alarms (half), more SMS scams caught, calibration, and robustness (section 8).
+- **Most SMS errors are spam vs phishing.** Telling scams from legitimate texts scores F1 0.968; deciding
+  which kind of scam is harder, partly because the labels disagree: "500 FREE text messages, reply FREE" is
+  labelled phishing, near-identical prize texts are labelled spam.
+- **Naive Bayes collapses on SMS** when trained with email: its 1,000 shared terms are chosen by email, so
+  it calls 86% of SMS scams legitimate. In 2024, trained on SMS alone, the same pipeline scored 0.91.
+- **Seeds matter.** SMS macro-F1 ranges from 0.830 to 0.877 across three seeds; a single-run comparison
+  between close models would be noise.
 
-What I take from this:
+![Training curves](figures/training_curves.png)
 
-- **Naive Bayes is a strong baseline on clean text.** It has the fewest false alarms of any model. Its weakness
-  is recall: it misses one scam in ten.
-- **Frozen sentence embeddings were the worst option.** MiniLM embeddings blur exactly the surface cues (short
-  codes, "txt", "£") that separate scams from chat, and flag one real text in twenty.
-- **Augmentation helped on clean data, not just attacked data.** Without it, the fine-tuned model overfits
-  (validation macro-F1 peaks at epoch 2 and then swings); with it, training is steadier. The augmented model is
-  better on macro-F1, precision, false alarms, smishing recall and calibration. The plain model catches
-  marginally more scams overall (97.9% vs 97.2%) but at three times the false-alarm rate. Obfuscated copies seem
-  to act as a regulariser here. With one run per setting I wouldn't put a number on the size of that effect.
-- **On the 121 test messages that only exist in the 2022 dataset** the augmented model scores 0.952 macro-F1,
-  the highest of the five, so it isn't just doing well on UCI-era text.
+## 7. Phishing written after the training data
 
-![Fine-tuning curves](figures/training_curves.png)
+| | Naive Bayes | TF-IDF + LR | DistilRoBERTa |
+|---|---:|---:|---:|
+| Test phishing, 2005-2007 | 94.9% | 98.3% | 99.4% |
+| Test phishing, 2015-2022 | 87.9% | 99.2% | 99.0% |
+| **Future: 2023** | 90.8% | 97.9% | 96.6% |
+| **Future: 2024** | 83.7% | 92.9% | 94.4% |
+| **Future: 2025** | 83.1% | 94.8% | 94.4% |
+| Future, campaigns with no older relative: phishing recall | 77.6% | 88.8% | **90.3%** |
 
-## 5. Robustness to obfuscation
+![Phishing over time](figures/phishing_over_time.png)
 
-Four character-level attacks, applied to a growing share of words in every test scam: leetspeak (`fr33`),
-Cyrillic look-alikes (`frее`), spacing (`f.r.e.e`) and adjacent-letter typos (`fere`), plus a mix of all four.
-The y-axis is the share of scams still caught.
+Detection drops by about 5 points once the data is newer than the training set, then holds steady from 2024
+to 2025. The DistilRoBERTa seeds agree within ±1.4 points.
+
+## 8. Robustness to obfuscation
+
+Four character-level attacks (leetspeak `fr33`, Cyrillic look-alikes, spacing `f.r.e.e`, adjacent-letter
+typos) and a mix, applied to a growing share of words in validation scams.
 
 ![Robustness](figures/robustness.png)
 
-- **Naive Bayes** has no normaliser and collapses: 89% of scams caught on clean text, 54% with 70% of words in
-  leetspeak or spacing.
-- **The normaliser does most of the work.** TF-IDF + LR with the normaliser keeps 96-97% under every attack
-  except heavy typos. The same model without it (dashed line) drops to 79% under heavy spacing.
-- **Typos are where the transformer earns its place.** The normaliser can't undo a swapped letter. At 70% typos
-  the augmented transformer still catches 95% of scams, against 87% for TF-IDF + LR.
-- **Attacks don't create false alarms.** With 30% of words obfuscated in real texts, the augmented model flags
-  0.85% of them, against 6.5% for MiniLM + LR.
+- The **normaliser** does most of the work: the same TF-IDF model without it drops from 87% to 65% of SMS
+  scams caught at 70% leetspeak; with it, it stays at 89%.
+- **Typos** can't be normalised away. At 70% typos, TF-IDF catches 75% of SMS scams; the deployed transformer,
+  trained on augmented copies, still catches 93%.
+- (The deployed transformer was also trained on the test split, so its robustness is measured on validation
+  messages, like the baselines.)
 
-## 6. Calibration
+## 9. SMS vs email
 
-![Reliability](figures/calibration.png)
+| Trained on → tested on | TF-IDF SMS | TF-IDF email | DistilRoBERTa SMS | DistilRoBERTa email |
+|---|---:|---:|---:|---:|
+| SMS only | **0.893** | 0.399 | 0.838 | 0.305 |
+| Email only | 0.397 | **0.969** | 0.471 | 0.942 |
+| Both | 0.848 | 0.967 | **0.865** | **0.974** |
 
-Fine-tuned transformers are usually overconfident, and this one was: temperature scaling on the validation set
-learned T = 1.87. After scaling, expected calibration error on the test set is 0.008, the lowest of the five
-models. The probabilities the demo shows can be read roughly at face value.
+![Transfer](figures/transfer.png)
 
-## 7. Out of domain: email
+The channels barely transfer. Training on both costs TF-IDF 4.4 points on SMS (email dominates its
+vocabulary) but helps the transformer on both channels. (Single-channel transformer runs: one seed each.)
 
-| Model | Enron ROC-AUC | Enron F1 |
+## 10. Scams without a hook
+
+How many test scams contain none of a link, phone number, email address or money amount, and how many of
+those are caught:
+
+| | SMS (28 such scams) | Email (902) |
 |---|---:|---:|
-| Naive Bayes | 0.546 | 0.548 |
-| TF-IDF + LR | 0.572 | 0.573 |
-| MiniLM + LR | 0.612 | 0.590 |
-| DistilRoBERTa | 0.556 | 0.587 |
-| DistilRoBERTa + aug. | 0.614 | 0.587 |
+| Naive Bayes | 14% | 80% |
+| TF-IDF + LR | 75% | 98% |
+| DistilRoBERTa | **83%** | **97%** |
 
-Every model is close to chance on email. SMS spam is short, full of short codes and text-speak, and its ham is
-casual chat. Email spam and email ham both look nothing like that. An SMS filter is an SMS filter.
+![No hook](figures/no_hook.png)
 
-## 8. Cost and deployment
+With only 28 hook-free SMS scams in the test set this is indicative only, but the gap to scams with a hook
+(98% for the transformer) is consistent across models.
 
-![Accuracy vs cost](figures/tradeoff.png)
+## 11. Error analysis
 
-I exported the augmented model to ONNX and applied dynamic int8 quantisation:
+On the campaign-held-out test, the transformer (seed 0) misses 6 SMS scams and 41 email scams, and raises
+1 SMS and 21 email false alarms. Reading them:
+
+- **Missed SMS** are mostly old-style subscription and quiz spam with no call to action left
+  ("For sale - arsenal dartboard. Good condition…", a Simpsons trivia question).
+- **Several email errors are label errors in the source data.** A Nazario "phishing" email reads "DON'T DELETE
+  THIS MESSAGE -- FOLDER INTERNAL DATA": a mail client's housekeeping message, not phishing. Enron "legitimate"
+  mail includes newsletters ("digitize your memories with compaq scanners", "welcome to the next wave in digital
+  music") that the model calls spam.
+- **Missed email phishing** includes attachment-only lures ("SHIPPING DOCUMENT: please find attached the
+  commercial invoice") where the scam is in a file the model never sees.
+
+**Handwritten probes** (illustrative, not a benchmark): current UK scams with a link or money are caught at
+over 99% (HMRC refund, Netflix billing, parcel fee, crypto withdrawal, a CEO gift-card request with no link).
+But genuine one-time-code, parcel-delivery and bank-card-alert texts are flagged as phishing, as is a genuine
+Amazon shipping email, and "Hi mum, new number, can you send £200" scores 2.5%.
+
+## 12. Deployment
 
 | | PyTorch fp32 | ONNX int8 |
 |---|---:|---:|
 | Size | 328.5 MB | 82.5 MB |
-| Latency, one message, laptop CPU | 49 ms | 10 ms |
-| Test macro-F1 | 0.921 | 0.920 |
-| Scam F1 | 0.975 | 0.979 |
-| Decisions that differ | | 4 of 851 (0.5%) |
+| Same decision as PyTorch (6,418 validation messages) | | 99.6% |
+| Median probability difference | | 0.0005 |
 
-**Running it in the browser.** Hugging Face now charges for server-backed Spaces, so the live demo has no
-server: a static page downloads the int8 model once (cached afterwards) and runs it with ONNX Runtime Web. That
-meant porting the normaliser, the decision rule and the occlusion explanations to JavaScript, and I didn't want
-to trust a port by eye. `python -m spam_detector.web_fixtures` writes the Python outputs for 254 messages
-(test messages, attacked variants and edge cases such as full-width text, emoji, zero-width characters and a
-message longer than the 96-token limit), and a Node test suite checks the JavaScript against them:
+Hugging Face now charges for server-backed Spaces, so the demo is a static page: it downloads the int8 model
+once (cached) and runs it with ONNX Runtime Web. Preprocessing, the decision rule and the occlusion
+explanations are ported to JavaScript and checked against Python by a Node test suite on 249 messages (SMS and
+email, attacked variants and edge cases): identical text preparation and token IDs, identical labels except
+on near-boundary messages, and the same strong explanation words. A check takes about 1 s for an SMS and 4-6 s
+for an email, explanation included, on a laptop.
 
-| Check | Result |
-|---|---|
-| Normalised text | identical on all 254 |
-| Token IDs, including truncation | identical on all 254 |
-| Final label | identical on all 254 |
-| Probabilities | median difference 0.0003, max 0.10 |
-| Strong explanation words (impact ≥ 0.5) | same words |
+The deployed model was retrained on train + test + future (validation kept for early stopping and the
+temperature), so the numbers above describe the protocol rather than that exact checkpoint. On validation it
+scores 0.859 (SMS) and 0.965 (email) macro-F1.
 
-The probabilities aren't bit-identical because WebAssembly and native ONNX Runtime round int8 matrix products
-differently. In the browser a check takes 0.4 to 1.2 s on a laptop, explanation included, and messages never
-leave the device. A FastAPI + Docker version of the same model stays in the repo for anyone who needs an API.
+## 13. Limitations and next steps
 
-If cost mattered more than smishing recall, TF-IDF + LR is the honest alternative: 70× smaller and 5× faster for
-about 2.5 points of macro-F1.
-
-## 9. Error analysis (deployed model, test set)
-
-|  | predicted ham | predicted spam | predicted smishing |
-|---|---:|---:|---:|
-| **ham** | 706 | 3 | 0 |
-| **spam** | 3 | 51 | 8 |
-| **smishing** | 0 | 5 | 75 |
-
-**Missed scams (3).** All three lack the usual hooks. One is a "how come a child afraid of the dark becomes a
-teenager…" chain message with the call to action cut off, one is a ringtone order receipt, and one reads like a
-personal note ("Hi this is Amy…").
-
-**False alarms (3).** A shouty all-caps text from a friend ("JUSWOKE UP IN A BED ON A BOATIN THE DOCKS…"), a
-"Today is ACCEPT DAY" chain message, and a message that is nothing but a university URL. The last one shows the
-model has learned "bare link = suspicious", which is usually right.
-
-**Spam vs smishing (13).** Most of these are label noise rather than model error. "For ur chance to win £250 cash
-every wk TXT: ACTION to 80608" is labelled spam in the test set, and near-identical prize texts are labelled
-smishing elsewhere in the same dataset. The model calls it smishing, which I'd argue is the safer reading.
-
-**Messages I wrote myself.** Current UK scams with a link or a prize are caught: a parcel fee (98.5%), an HMRC
-refund (98.8%), a crypto withdrawal (95.8%). Genuine one-time codes, an Uber arrival and a dentist reminder all
-pass at about 2%. Two misses matter: "Hi mum, I've dropped my phone, this is my new number, can you send £200"
-scores 1.5%, and a fake Netflix billing alert scores 48%, just under the threshold.
-
-## 10. Limitations and what I'd do next
-
-1. **Newer data.** The biggest gap is social-engineering scams with no link or prize ("Hi mum", fake bank
-   callbacks). I'd collect recent public examples (Action Fraud and Ofcom publish them) and label a few hundred.
-2. **Seeds.** Each configuration was trained once. Three to five seeds would put error bars on the augmentation
-   effect.
-3. **Threshold per use.** A personal inbox filter should sit at very low false alarms; a "warn me" banner can
-   afford more. The PR curve supports either; the demo uses 0.5.
-4. **Labels.** Re-labelling the 23 conflicting campaigns would probably add more to spam-vs-smishing accuracy than
-   any model change.
-5. **URL features.** The strongest single signal is the link. Domain age or reputation lookups would help, but
-   they need a live service, which is out of scope for a free demo.
+1. **Legitimate service messages.** The biggest practical gap. Codes, delivery updates and bank alerts look
+   like phishing to the model because the training data has scams imitating them but almost none of the real
+   ones. Next step: collect and label a few hundred real service messages (my own inbox, with consent from
+   others) and add them as a training source and a dedicated test.
+2. **Modern legitimate email.** All legitimate email is from 1999-2005; modern brand notifications only
+   appear as phishing. Same remedy.
+3. **Social-engineering scams** with no link, number or money ("Hi mum") are rare in the data and missed.
+4. **Label noise** at the spam/phishing boundary and in the source corpora (section 11). Relabelling the
+   conflicting campaigns would likely help more than any model change.
+5. **Single-channel transformer runs** used one seed; the main comparison used three.
+6. **English only.**
 
 ## Reproducing
 
-Every number and figure above comes from `reports/results.json`, which `python -m spam_detector.evaluate`
-regenerates. The full command sequence is in the [README](../README.md#reproduce-it). Fine-tuning takes about an
-hour per model on a laptop CPU (Intel i5-1235U).
+Every number and figure comes from `reports/results.json`, `reports/data_audit.json` and
+`reports/shortcut_audit.json`, regenerated by the commands in the [README](../README.md#reproduce-it).
+Transformer training runs on a free Colab T4 from `notebooks/train_on_colab.ipynb` (about 90 minutes for all
+six runs); everything else runs on a laptop CPU.

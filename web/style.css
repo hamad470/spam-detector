@@ -117,3 +117,4 @@ footer { padding: 8px 16px 40px; }
 .verdict.legit { color: var(--ham); background: var(--ham-bg); }
 .seg.legit, .sw.legit { background: var(--ham); }
 .seg.phishing, .sw.phishing { background: var(--spam); }
+.note { margin: 12px 0 0; }

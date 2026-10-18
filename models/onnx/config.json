@@ -4,7 +4,7 @@
     "spam",
     "phishing"
   ],
-  "temperature": 1.9680798053741455,
+  "temperature": 1.6529477834701538,
   "max_len": {
     "sms": 96,
     "email": 256

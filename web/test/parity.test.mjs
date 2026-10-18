@@ -55,11 +55,15 @@ test("labels match Python and probabilities stay close", { skip: !haveModel && "
   assert.ok(median < 2e-3, `median probability difference ${median}`);
 });
 
+// Rounding differences reorder near-ties (especially far from p = 0.5, where log-odds are
+// sensitive), so a strong Python word must be in the browser's top 12 and point the same way.
 test("strong explanation words match Python", { skip: !haveModel && "model not downloaded" }, async () => {
   for (const e of fixtures.explained) {
-    const words = new Set((await clf.classify(e.text, { domain: e.domain })).evidence.map((x) => x.word));
+    const r = await clf.classify(e.text, { domain: e.domain, topK: 12 });
+    const js = new Map(r.evidence.map((x) => [x.word, x.impact]));
     for (const x of e.evidence.filter((x) => Math.abs(x.impact) >= 0.5)) {
-      assert.ok(words.has(x.word), `"${x.word}" missing for ${label(e)}`);
+      assert.ok(js.has(x.word), `"${x.word}" missing for ${label(e)}`);
+      assert.equal(Math.sign(js.get(x.word)), Math.sign(x.impact), `"${x.word}" flips for ${label(e)}`);
     }
   }
 });
