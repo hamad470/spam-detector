@@ -55,7 +55,8 @@ jobs:
           pip install -q huggingface_hub
           python -c "from huggingface_hub import create_repo; import os; create_repo(os.environ['HF_SPACE'], repo_type='space', space_sdk='static', exist_ok=True, token=os.environ['HF_TOKEN'])"
           mkdir site
-          cp web/index.html web/style.css web/app.js web/scam.js site/
+          cp web/index.html web/style.css web/app.js web/scam.js web/compare.js site/
+          if [ -f web/compare.json ]; then cp web/compare.json site/; fi
           cp .github/hf-space-header.md site/README.md
           cd site
           git init -q -b main

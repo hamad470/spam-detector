@@ -97,3 +97,19 @@ def test_enron_packaging_is_undone():
 
 def test_years_are_masked():
     assert "xxyear" in prepare("your 2024 tax refund", "sms")
+
+
+def test_llm_comparison_scores_refusals_as_wrong():
+    from spam_detector.llm_compare import metrics
+
+    m = metrics(["legit", "spam", "phishing", "legit"], ["legit", "phishing", "phishing", "error"])
+    assert m["accuracy"] == 0.5 and m["errors"] == 1
+    assert m["scams_caught"] == 1.0
+
+
+def test_llm_prompt_lists_the_three_labels():
+    from spam_detector.llm_compare import SCHEMA, system_prompt
+
+    assert SCHEMA["properties"]["label"]["enum"] == ["legit", "spam", "phishing"]
+    prompt = system_prompt("email", [("Win a prize now", "spam")])
+    assert "email" in prompt and "Label: spam" in prompt

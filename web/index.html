@@ -65,6 +65,27 @@
     <p class="small muted">Each word is scored by removing it and measuring how far the scam log-odds move. Red words pushed towards scam and green words pushed away from it. <span id="timing"></span></p>
   </section>
 
+  <section class="card" id="compare" hidden>
+    <h2>Fine-tuned model vs Gemini</h2>
+    <p class="muted" id="cmp-intro"></p>
+    <div class="row cmp-controls">
+      <div class="toggle" role="radiogroup" aria-label="Channel">
+        <button class="seg-btn cmp-dom active" data-dom="all" role="radio" aria-checked="true">Both</button>
+        <button class="seg-btn cmp-dom" data-dom="sms" role="radio" aria-checked="false">SMS</button>
+        <button class="seg-btn cmp-dom" data-dom="email" role="radio" aria-checked="false">Email</button>
+      </div>
+      <label class="small muted check"><input type="checkbox" id="cmp-disagree"> only where they disagree</label>
+      <button id="cmp-draw" class="primary">Draw 30 at random</button>
+    </div>
+    <div class="table-wrap"><table class="cmp cmp-metrics" id="cmp-metrics"></table></div>
+    <p class="small muted" id="cmp-note"></p>
+    <ul class="cmp-list" id="cmp-list"></ul>
+    <details class="small muted cmp-prompts">
+      <summary>Exact prompts sent to Gemini</summary>
+      <div id="cmp-prompts"></div>
+    </details>
+  </section>
+
   <section class="card" id="model-card">
     <h2>Model card</h2>
     <p class="muted" id="model-desc">Loading…</p>
@@ -80,5 +101,6 @@
 </footer>
 
 <script type="module" src="app.js"></script>
+<script type="module" src="compare.js"></script>
 </body>
 </html>

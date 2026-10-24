@@ -118,3 +118,22 @@ footer { padding: 8px 16px 40px; }
 .seg.legit, .sw.legit { background: var(--ham); }
 .seg.phishing, .sw.phishing { background: var(--spam); }
 .note { margin: 12px 0 0; }
+.cmp-controls { margin: 4px 0 12px; }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cmp-metrics td:not(:first-child), .cmp-metrics th:not(:first-child) { white-space: nowrap; }
+.cmp-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+.cmp-list li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.cmp-list summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.cmp-list .dom { font-size: 0.75rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; flex: none; }
+.cmp-list .snippet { overflow: hidden; text-overflow: ellipsis; }
+.cmp-list .full { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; font-size: 0.9rem; }
+.preds { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; font-size: 0.85rem; }
+.preds .truth { margin-right: 6px; }
+.preds .who { color: var(--muted); }
+.chip-lbl { border-radius: 999px; padding: 1px 9px; font-weight: 600; }
+.chip-lbl.legit { background: var(--ham-bg); color: var(--ham); }
+.chip-lbl.spam { background: var(--promo-bg); color: var(--promo); }
+.chip-lbl.phishing { background: var(--spam-bg); color: var(--spam); }
+.chip-lbl.error { background: var(--border); color: var(--muted); }
+.chip-lbl.wrong { outline: 2px solid var(--spam); outline-offset: -2px; }
+.cmp-prompts pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }

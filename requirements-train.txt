@@ -13,3 +13,4 @@ datasketch==2.0.0
 nltk==3.9.1
 joblib==1.4.2
 matplotlib==3.11.2
+google-genai==2.33.0

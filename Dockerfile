@@ -22,7 +22,7 @@ RUN python -c "import os; from huggingface_hub import snapshot_download; \
 snapshot_download(os.environ['MODEL_REPO'], local_dir='models/onnx', allow_patterns=['model.onnx', 'tokenizer.json'])"
 
 COPY --chown=user app ./app
-COPY --chown=user web/index.html web/app.js web/scam.js web/style.css ./web/
+COPY --chown=user web/index.html web/app.js web/scam.js web/style.css web/compare.js web/compare.json* ./web/
 ENV MODEL_DIR=/home/user/app/models/onnx
 
 EXPOSE 7860
