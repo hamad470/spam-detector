@@ -1,0 +1,98 @@
+[
+ {
+  "domain": "sms",
+  "truth": "legit",
+  "text": "Your verification code is 482913. Do not share it with anyone.",
+  "model": "phishing",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "sms",
+  "truth": "legit",
+  "text": "Reminder: your dentist appointment is tomorrow at 10:30. Reply C to cancel",
+  "model": "phishing",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "sms",
+  "truth": "legit",
+  "text": "Your Uber driver is arriving in 3 minutes. Look for a white Toyota Prius",
+  "model": "legit",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "sms",
+  "truth": "legit",
+  "text": "Your parcel will be delivered today between 10:00 and 12:00. Track it in the app.",
+  "model": "phishing",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "sms",
+  "truth": "legit",
+  "text": "Your bank card ending 4421 was used for £23.50 at Tesco. If this wasn't you, call the number on the back of your card.",
+  "model": "phishing",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "sms",
+  "truth": "phishing",
+  "text": "Hi mum, I've dropped my phone in the toilet, this is my new number. Can you send me £200 for rent, I'll pay you back tomorrow",
+  "model": "legit",
+  "zero_shot": "phishing",
+  "few_shot": "phishing"
+ },
+ {
+  "domain": "sms",
+  "truth": "phishing",
+  "text": "Hello, is this still your number? I have a job offer for you, part time from home, earn up to 800 a day. Reply for details",
+  "model": "spam",
+  "zero_shot": "phishing",
+  "few_shot": "phishing"
+ },
+ {
+  "domain": "sms",
+  "truth": "phishing",
+  "text": "HMRC: You are eligible for a tax refund of £326.40. Claim now at hmrc-refund-gov.uk",
+  "model": "phishing",
+  "zero_shot": "phishing",
+  "few_shot": "phishing"
+ },
+ {
+  "domain": "sms",
+  "truth": "phishing",
+  "text": "Royal Mail: your parcel is on hold due to an unpaid £1.99 fee. Pay at royalmail-redelivery-uk.com",
+  "model": "phishing",
+  "zero_shot": "phishing",
+  "few_shot": "phishing"
+ },
+ {
+  "domain": "email",
+  "truth": "legit",
+  "text": "Subject: Your Amazon order #114-2235 has shipped\n\nHi, your package will arrive Tuesday. Track your order in Your Orders on amazon.co.uk.",
+  "model": "phishing",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "email",
+  "truth": "legit",
+  "text": "Subject: Re: Q3 budget\n\nHi Sam, attached is the revised Q3 budget. Can you check the travel line before Thursday? Thanks, Anna",
+  "model": "legit",
+  "zero_shot": "legit",
+  "few_shot": "legit"
+ },
+ {
+  "domain": "email",
+  "truth": "phishing",
+  "text": "Subject: Urgent request\n\nAre you available? I need you to buy some gift cards for a client today, I'll reimburse you. Reply asap. Sent from my iPhone",
+  "model": "phishing",
+  "zero_shot": "phishing",
+  "few_shot": "phishing"
+ }
+]

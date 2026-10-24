@@ -77,6 +77,32 @@ text legitimate.
 
 ![Transfer](reports/figures/transfer.png)
 
+## Fine-tuned model vs Gemini
+
+The demo page lets you draw random messages and compare three systems on the same 300 held-out validation
+messages (150 SMS, 150 email): this model, and `gemini-3.5-flash-lite` prompted two ways (definitions only,
+and definitions plus 12 labelled training examples), forced through structured output to answer with exactly
+one of legit, spam or phishing at temperature 0.
+
+| On 300 validation messages | Accuracy | Macro-F1 (95% CI) | Scams caught | Legit flagged |
+|---|---:|---:|---:|---:|
+| **Fine-tuned DistilRoBERTa** (82.5 MB, in the browser) | **93.7%** | **0.931** (0.902-0.959) | 97.2% | **0.8%** |
+| Gemini, few-shot prompt | 91.7% | 0.909 (0.871-0.942) | 96.7% | 0.8% |
+| Gemini, zero-shot prompt | 87.3% | 0.866 (0.824-0.902) | 97.2% | 5.8% |
+
+- **Prompting is most of Gemini's performance:** 12 examples lift it from 0.866 to 0.909 and cut false alarms
+  from 5.8% to 0.8%.
+- **On the benchmark the small model leads**, mainly on SMS phishing (91% recall vs 58% for zero-shot Gemini),
+  though its interval overlaps few-shot Gemini's.
+- **On everyday messages the picture flips.** On 12 handwritten texts (genuine codes, deliveries, bank alerts,
+  an Amazon email, a "Hi mum" scam) Gemini is right 12/12 with either prompt; the fine-tuned model 5/12. The
+  LLM knows what genuine service messages look like; the public datasets don't contain them.
+
+The two are complementary: a small local model is private, free to run and strong on what it was trained on;
+an LLM covers the gaps in the training data. Reproduce with `python -m spam_detector.llm_compare` and a key in
+`.env` (`GEMINI_API_KEY=...`, or `GEMINI_API_KEYS=key1,key2` to fall back to a second key when one runs out of
+quota). Answers are cached, so a rerun only asks for what's missing.
+
 ## Known limitation: legitimate service messages
 
 The model often flags **genuine service texts** (one-time passcodes, delivery updates, bank card alerts) and
@@ -131,7 +157,7 @@ your local model. For a REST API instead, `uvicorn app.main:app` or `docker buil
 
 ```
 spam-detector/
-├── web/                     live demo: page, scam.js (browser port), Node parity tests
+├── web/                     live demo: page, scam.js (browser port), compare.js + compare.json (vs Gemini), Node tests
 ├── app/                     optional FastAPI service; serves the same page
 ├── src/spam_detector/
 │   ├── datasets.py, email_text.py   download, load and parse the six datasets
@@ -143,6 +169,7 @@ spam-detector/
 │   ├── models/              Naive Bayes, TF-IDF + LR, DistilRoBERTa trainer
 │   ├── evaluate.py          every experiment -> reports/results.json
 │   ├── export.py, inference.py, publish.py   ONNX, serving classifier, Hub upload
+│   ├── llm_compare.py       fine-tuned model vs Gemini (zero-shot, few-shot) on 300 validation messages
 │   └── figures.py, web_fixtures.py, colab_bundle.py
 ├── notebooks/               original 2024 notebook, Colab training notebook
 ├── reports/                 REPORT.md, results.json, audits, figures/

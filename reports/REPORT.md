@@ -23,6 +23,9 @@ and the evaluation:
   on false alarms, recall and disguised text.
 - **What it can't do:** it flags genuine service messages (codes, deliveries, bank alerts) because no public
   dataset contains them, and misses scams with no link or money. That needs new data, not a new model.
+- **Against an LLM:** on 300 held-out messages it beats `gemini-3.5-flash-lite` (macro-F1 0.931 vs 0.909
+  few-shot, 0.866 zero-shot), but Gemini gets 12/12 everyday service texts and link-free scams right where the
+  fine-tuned model gets 5/12. They fail in different places.
 
 ## 1. Data
 
@@ -232,7 +235,45 @@ over 99% (HMRC refund, Netflix billing, parcel fee, crypto withdrawal, a CEO gif
 But genuine one-time-code, parcel-delivery and bank-card-alert texts are flagged as phishing, as is a genuine
 Amazon shipping email, and "Hi mum, new number, can you send £200" scores 2.5%.
 
-## 12. Deployment
+## 12. Fine-tuned model vs an LLM
+
+Is an 82.5 MB fine-tuned model still worth having when a general LLM can be prompted to do the same job? I
+compared the deployed model with `gemini-3.5-flash-lite` on a fixed pool of 300 **validation** messages (the
+deployed model was retrained on the test split, so validation is the data it has never been fitted on):
+150 SMS and 150 emails, 60 legit, 45 spam and 45 phishing per channel. Gemini got the raw text and two
+prompts: the label definitions only (zero-shot), and the definitions plus 12 short labelled training examples
+(few-shot). Structured output restricts it to one of the three labels; temperature is 0. Two requests per
+prompt returned an error and are scored as wrong.
+
+| | Accuracy | Macro-F1 (95% CI) | Scams caught | Legit flagged | SMS phishing recall |
+|---|---:|---:|---:|---:|---:|
+| Fine-tuned DistilRoBERTa | **93.7%** | **0.931** (0.902-0.959) | 97.2% | **0.8%** | **91.1%** |
+| Gemini, few-shot | 91.7% | 0.909 (0.871-0.942) | 96.7% | 0.8% | 82.2% |
+| Gemini, zero-shot | 87.3% | 0.866 (0.824-0.902) | 97.2% | 5.8% | 57.8% |
+
+By channel, the gap is on SMS (macro-F1 0.882 vs 0.868 few-shot vs 0.778 zero-shot); on email all three are
+close (0.980, 0.950, 0.951). The two Gemini prompts agree on 92% of messages. Median Gemini latency was about
+0.8-0.9 s per message over the API, against 1 s in the browser for the local model including explanations.
+
+**Handwritten probes.** The same three systems on the 12 everyday messages from section 11:
+
+| | Correct |
+|---|---:|
+| Fine-tuned DistilRoBERTa | 5 / 12 |
+| Gemini, zero-shot | 12 / 12 |
+| Gemini, few-shot | 12 / 12 |
+
+Gemini gets every genuine service message right (one-time code, appointment reminder, delivery update, card
+alert, Amazon shipping email) and both link-free scams ("Hi mum", a job offer). Twelve messages are not a
+benchmark, but the pattern is exactly the data gap described in section 14.
+
+**Takeaway.** On data that looks like its training set, the small model matches or beats a prompted LLM while
+running privately in a browser at no per-message cost. A general LLM is far better on messages the public
+datasets never contained. A practical system would use both: the local model first, and an LLM for messages it
+is unsure about or that look like service notifications. The cost of the LLM step is a network round trip and
+sending the message to a third party.
+
+## 13. Deployment
 
 | | PyTorch fp32 | ONNX int8 |
 |---|---:|---:|
@@ -251,7 +292,7 @@ The deployed model was retrained on train + test + future (validation kept for e
 temperature), so the numbers above describe the protocol rather than that exact checkpoint. On validation it
 scores 0.859 (SMS) and 0.965 (email) macro-F1.
 
-## 13. Limitations and next steps
+## 14. Limitations and next steps
 
 1. **Legitimate service messages.** The biggest practical gap. Codes, delivery updates and bank alerts look
    like phishing to the model because the training data has scams imitating them but almost none of the real

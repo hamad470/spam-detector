@@ -137,3 +137,6 @@ footer { padding: 8px 16px 40px; }
 .chip-lbl.error { background: var(--border); color: var(--muted); }
 .chip-lbl.wrong { outline: 2px solid var(--spam); outline-offset: -2px; }
 .cmp-prompts pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
+.cmp-probes td, .cmp-probes th { text-align: left; }
+.cmp-probes .probe-text { white-space: normal; min-width: 260px; }
+.cmp-probes .dom { font-size: 0.72rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }

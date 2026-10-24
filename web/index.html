@@ -49,7 +49,7 @@
       <div class="chips" id="examples"></div>
       <button id="go" class="primary" disabled>Check</button>
     </div>
-    <p class="small muted note">Known weakness: genuine service messages (one-time codes, delivery updates, bank alerts) are often flagged, because the public training data has the scams that imitate them but almost none of the real ones. <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md#13-limitations-and-next-steps" target="_blank" rel="noopener">Why</a></p>
+    <p class="small muted note">Known weakness: genuine service messages (one-time codes, delivery updates, bank alerts) are often flagged, because the public training data has the scams that imitate them but almost none of the real ones. <a href="https://github.com/hamad470/spam-detector/blob/main/reports/REPORT.md#14-limitations-and-next-steps" target="_blank" rel="noopener">Why</a></p>
   </section>
 
   <section class="card result" id="result" hidden aria-live="polite">
@@ -80,6 +80,9 @@
     <div class="table-wrap"><table class="cmp cmp-metrics" id="cmp-metrics"></table></div>
     <p class="small muted" id="cmp-note"></p>
     <ul class="cmp-list" id="cmp-list"></ul>
+    <h3>12 everyday messages, written by hand</h3>
+    <p class="small muted">Genuine service texts the training data barely contains, and scams with no link. Illustrative, not a benchmark, but it shows where each approach fails.</p>
+    <div class="table-wrap"><table class="cmp cmp-probes" id="cmp-probes"></table></div>
     <details class="small muted cmp-prompts">
       <summary>Exact prompts sent to Gemini</summary>
       <div id="cmp-prompts"></div>

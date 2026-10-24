@@ -30,6 +30,29 @@ PER_CLASS = {"legit": 60, "spam": 45, "phishing": 45}  # per channel; 300 messag
 DISPLAY_CHARS = 1200
 CACHE = ARTIFACTS / "gemini_cache.jsonl"
 
+# Handwritten messages that mimic what people actually receive today: genuine service texts the
+# training data lacks, and scams with no link. Illustrative, not a benchmark.
+PROBES = [
+    ("sms", "legit", "Your verification code is 482913. Do not share it with anyone."),
+    ("sms", "legit", "Reminder: your dentist appointment is tomorrow at 10:30. Reply C to cancel"),
+    ("sms", "legit", "Your Uber driver is arriving in 3 minutes. Look for a white Toyota Prius"),
+    ("sms", "legit", "Your parcel will be delivered today between 10:00 and 12:00. Track it in the app."),
+    ("sms", "legit", "Your bank card ending 4421 was used for £23.50 at Tesco. If this wasn't you, call the number "
+     "on the back of your card."),
+    ("sms", "phishing", "Hi mum, I've dropped my phone in the toilet, this is my new number. Can you send me £200 "
+     "for rent, I'll pay you back tomorrow"),
+    ("sms", "phishing", "Hello, is this still your number? I have a job offer for you, part time from home, earn "
+     "up to 800 a day. Reply for details"),
+    ("sms", "phishing", "HMRC: You are eligible for a tax refund of £326.40. Claim now at hmrc-refund-gov.uk"),
+    ("sms", "phishing", "Royal Mail: your parcel is on hold due to an unpaid £1.99 fee. Pay at royalmail-redelivery-uk.com"),
+    ("email", "legit", "Subject: Your Amazon order #114-2235 has shipped\n\nHi, your package will arrive Tuesday. "
+     "Track your order in Your Orders on amazon.co.uk."),
+    ("email", "legit", "Subject: Re: Q3 budget\n\nHi Sam, attached is the revised Q3 budget. Can you check the travel "
+     "line before Thursday? Thanks, Anna"),
+    ("email", "phishing", "Subject: Urgent request\n\nAre you available? I need you to buy some gift cards for a "
+     "client today, I'll reimburse you. Reply asap. Sent from my iPhone"),
+]  # fmt: skip
+
 DEFINITIONS = """You classify one message into exactly one of three labels.
 
 legit: anything the recipient would want or reasonably expect: personal messages, work email,
@@ -232,6 +255,11 @@ def main(argv=None) -> None:
     proba = clf.predict_proba(pool.text, pool.domain)
     pool["model"] = np.array(LABELS)[decide(proba)]
     pool["model_scam_p"] = (1 - proba[:, 0]).round(4)
+    probes = pd.DataFrame(PROBES, columns=["domain", "label", "text"])
+    probes["id"] = [f"probe-{i}" for i in range(len(probes))]
+    probes["model"] = np.array(LABELS)[decide(clf.predict_proba(probes.text, probes.domain))]
+    if args.limit:
+        probes = probes.head(0)
 
     variants = {
         "zero_shot": {d: system_prompt(d, None) for d in DOMAINS},
@@ -242,7 +270,11 @@ def main(argv=None) -> None:
     ARTIFACTS.mkdir(exist_ok=True)
     with CACHE.open("a", encoding="utf-8") as out:
         for variant, prompts in variants.items():
-            todo = [r for r in pool.itertuples() if (args.model, variant, r.id) not in cache]
+            todo = [
+                r
+                for r in [*pool.itertuples(), *probes.itertuples()]
+                if (args.model, variant, r.id) not in cache
+            ]
             minutes = len(todo) / args.rpm
             print(f"{variant}: {len(pool) - len(todo)} cached, {len(todo)} to ask (~{minutes:.0f} min)")
             for i, r in enumerate(todo, 1):
@@ -265,6 +297,7 @@ def main(argv=None) -> None:
                 if i % 25 == 0:
                     print(f"  {i}/{len(todo)}", flush=True)
     for variant in variants:
+        probes[variant] = [cache[(args.model, variant, i)]["label"] for i in probes.id]
         pool[variant] = [cache[(args.model, variant, i)]["label"] for i in pool.id]
         pool[f"{variant}_secs"] = [cache[(args.model, variant, i)]["secs"] for i in pool.id]
 
@@ -287,6 +320,17 @@ def main(argv=None) -> None:
         "prompts": {v: {d: p for d, p in ps.items()} for v, ps in variants.items()},
         "summary": summary,
         "gemini_prompts_agree": round(float(agree), 4),
+        "probes": [
+            {
+                "domain": r.domain,
+                "label": r.label,
+                "text": r.text,
+                "model": r.model,
+                "gemini_zero_shot": r.zero_shot,
+                "gemini_few_shot": r.few_shot,
+            }
+            for r in probes.itertuples()
+        ],  # fmt: skip
         "messages": [
             {
                 "id": r.id,

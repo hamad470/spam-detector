@@ -86,6 +86,22 @@ function render(rows, poolSize) {
     .join("");
 }
 
+function renderProbes() {
+  const p = data.probes || [];
+  if (!p.length) return;
+  const mark = (pred, truth) => `<span class="chip-lbl ${pred}${pred === truth ? "" : " wrong"}">${pred === truth ? "✓" : "✗"} ${pred}</span>`;
+  const score = (k) => p.filter((r) => r[k] === r.label).length;
+  $("cmp-probes").innerHTML =
+    `<tr><th>Message</th><th>True</th><th>Model (${score("model")}/${p.length})</th>` +
+    `<th>Gemini zero-shot (${score("gemini_zero_shot")}/${p.length})</th><th>Gemini few-shot (${score("gemini_few_shot")}/${p.length})</th></tr>` +
+    p
+      .map(
+        (r) => `<tr><td class="probe-text"><span class="dom">${r.domain === "sms" ? "SMS" : "Email"}</span> ${esc(r.text.split("\n")[0].slice(0, 90))}</td>
+        <td>${r.label}</td><td>${mark(r.model, r.label)}</td><td>${mark(r.gemini_zero_shot, r.label)}</td><td>${mark(r.gemini_few_shot, r.label)}</td></tr>`,
+      )
+      .join("");
+}
+
 function setScope(d) {
   scope = d;
   for (const b of document.querySelectorAll(".cmp-dom")) {
@@ -110,6 +126,7 @@ async function init() {
   $("cmp-draw").addEventListener("click", draw);
   $("cmp-disagree").addEventListener("change", draw);
   $("compare").hidden = false;
+  renderProbes();
   draw();
 }
 
