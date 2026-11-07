@@ -1,0 +1,470 @@
+{
+  "tag": "reference",
+  "scored_at": "2026-11-07T01:41:35+00:00",
+  "git_commit": "3d6bc0b",
+  "target_recall": 0.95,
+  "thresholds_from": "validation split of each run",
+  "runs": {
+    "sms-email_seed0": {
+      "domains": [
+        "sms",
+        "email"
+      ],
+      "seed": 0,
+      "final": false,
+      "temperature": 1.9144260883331299,
+      "epochs": 3,
+      "train_size": 32096
+    },
+    "sms-email_seed1": {
+      "domains": [
+        "sms",
+        "email"
+      ],
+      "seed": 1,
+      "final": false,
+      "temperature": 1.9144045114517212,
+      "epochs": 3,
+      "train_size": 32096
+    },
+    "sms-email_seed2": {
+      "domains": [
+        "sms",
+        "email"
+      ],
+      "seed": 2,
+      "final": false,
+      "temperature": 1.904773235321045,
+      "epochs": 3,
+      "train_size": 32096
+    }
+  },
+  "summary": {
+    "sms": {
+      "scam_recall": {
+        "mean": 0.9366,
+        "std": 0.0141
+      },
+      "precision": {
+        "mean": 0.9925,
+        "std": 0.0001
+      },
+      "false_alarms_per_1000": {
+        "mean": 1.42,
+        "std": 0.0
+      },
+      "pr_auc": {
+        "mean": 0.9926,
+        "std": 0.002
+      },
+      "ece": {
+        "mean": 0.004,
+        "std": 0.0029
+      },
+      "warn_band_share": {
+        "mean": 0.0185,
+        "std": 0.0049
+      }
+    },
+    "email": {
+      "scam_recall": {
+        "mean": 0.9458,
+        "std": 0.0127
+      },
+      "precision": {
+        "mean": 0.9984,
+        "std": 0.0012
+      },
+      "false_alarms_per_1000": {
+        "mean": 1.5433,
+        "std": 1.1458
+      },
+      "pr_auc": {
+        "mean": 0.9993,
+        "std": 0.0002
+      },
+      "ece": {
+        "mean": 0.0076,
+        "std": 0.0022
+      },
+      "warn_band_share": {
+        "mean": 0.0284,
+        "std": 0.0057
+      }
+    }
+  },
+  "per_run": {
+    "sms-email_seed0": {
+      "sms": {
+        "n_val": 845,
+        "n_test": 845,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.929859,
+            "recall": 0.9507,
+            "precision": 0.9926,
+            "false_alarms_per_1000": 1.42,
+            "n_scam": 142,
+            "n_legit": 703
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.959952,
+            "recall": 0.9507,
+            "precision": 1.0,
+            "false_alarms_per_1000": 0.0,
+            "n_scam": 142,
+            "n_legit": 703
+          }
+        },
+        "pr_auc": 0.9943,
+        "ece": 0.0019,
+        "bands": {
+          "warn_edge": 0.007581949234008789,
+          "flag_edge": 0.929858922958374,
+          "allow": {
+            "share_of_messages": 0.8189,
+            "scams": 1,
+            "genuine": 691
+          },
+          "warn": {
+            "share_of_messages": 0.0201,
+            "scams": 6,
+            "genuine": 11
+          },
+          "flag": {
+            "share_of_messages": 0.1609,
+            "scams": 135,
+            "genuine": 1
+          }
+        },
+        "by_source": {
+          "mendeley_2022": {
+            "n": 131,
+            "scam_recall": 0.9643,
+            "false_alarms_per_1000": 0.0
+          },
+          "uci+mendeley": {
+            "n": 696,
+            "scam_recall": 0.9419,
+            "false_alarms_per_1000": 1.64
+          },
+          "uci_2011": {
+            "n": 18,
+            "scam_recall": null,
+            "false_alarms_per_1000": 0.0
+          }
+        }
+      },
+      "email": {
+        "n_val": 5573,
+        "n_test": 5574,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.972521,
+            "recall": 0.9552,
+            "precision": 0.9989,
+            "false_alarms_per_1000": 1.07,
+            "n_scam": 2766,
+            "n_legit": 2808
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.976366,
+            "recall": 0.9501,
+            "precision": 0.9992,
+            "false_alarms_per_1000": 0.71,
+            "n_scam": 2766,
+            "n_legit": 2808
+          }
+        },
+        "pr_auc": 0.9994,
+        "ece": 0.0058,
+        "bands": {
+          "warn_edge": 0.08004015684127808,
+          "flag_edge": 0.9725213646888733,
+          "allow": {
+            "share_of_messages": 0.5018,
+            "scams": 25,
+            "genuine": 2772
+          },
+          "warn": {
+            "share_of_messages": 0.0237,
+            "scams": 99,
+            "genuine": 33
+          },
+          "flag": {
+            "share_of_messages": 0.4745,
+            "scams": 2642,
+            "genuine": 3
+          }
+        },
+        "by_source": {
+          "enron": {
+            "n": 4310,
+            "scam_recall": 0.957,
+            "false_alarms_per_1000": 0.44
+          },
+          "nazario": {
+            "n": 492,
+            "scam_recall": 0.9736,
+            "false_alarms_per_1000": null
+          },
+          "spamassassin": {
+            "n": 772,
+            "scam_recall": 0.8996,
+            "false_alarms_per_1000": 3.68
+          }
+        }
+      }
+    },
+    "sms-email_seed1": {
+      "sms": {
+        "n_val": 845,
+        "n_test": 845,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.865022,
+            "recall": 0.9366,
+            "precision": 0.9925,
+            "false_alarms_per_1000": 1.42,
+            "n_scam": 142,
+            "n_legit": 703
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.749873,
+            "recall": 0.9507,
+            "precision": 0.9926,
+            "false_alarms_per_1000": 1.42,
+            "n_scam": 142,
+            "n_legit": 703
+          }
+        },
+        "pr_auc": 0.993,
+        "ece": 0.0028,
+        "bands": {
+          "warn_edge": 0.015448510646820068,
+          "flag_edge": 0.8650224208831787,
+          "allow": {
+            "share_of_messages": 0.8284,
+            "scams": 2,
+            "genuine": 698
+          },
+          "warn": {
+            "share_of_messages": 0.013,
+            "scams": 7,
+            "genuine": 4
+          },
+          "flag": {
+            "share_of_messages": 0.1586,
+            "scams": 133,
+            "genuine": 1
+          }
+        },
+        "by_source": {
+          "mendeley_2022": {
+            "n": 131,
+            "scam_recall": 0.9464,
+            "false_alarms_per_1000": 0.0
+          },
+          "uci+mendeley": {
+            "n": 696,
+            "scam_recall": 0.9302,
+            "false_alarms_per_1000": 1.64
+          },
+          "uci_2011": {
+            "n": 18,
+            "scam_recall": null,
+            "false_alarms_per_1000": 0.0
+          }
+        }
+      },
+      "email": {
+        "n_val": 5573,
+        "n_test": 5574,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.968727,
+            "recall": 0.9313,
+            "precision": 0.9992,
+            "false_alarms_per_1000": 0.71,
+            "n_scam": 2766,
+            "n_legit": 2808
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.93065,
+            "recall": 0.9505,
+            "precision": 0.9973,
+            "false_alarms_per_1000": 2.49,
+            "n_scam": 2766,
+            "n_legit": 2808
+          }
+        },
+        "pr_auc": 0.9993,
+        "ece": 0.007,
+        "bands": {
+          "warn_edge": 0.14923608303070068,
+          "flag_edge": 0.9687270522117615,
+          "allow": {
+            "share_of_messages": 0.5027,
+            "scams": 27,
+            "genuine": 2775
+          },
+          "warn": {
+            "share_of_messages": 0.0348,
+            "scams": 163,
+            "genuine": 31
+          },
+          "flag": {
+            "share_of_messages": 0.4625,
+            "scams": 2576,
+            "genuine": 2
+          }
+        },
+        "by_source": {
+          "enron": {
+            "n": 4310,
+            "scam_recall": 0.9438,
+            "false_alarms_per_1000": 0.88
+          },
+          "nazario": {
+            "n": 492,
+            "scam_recall": 0.9695,
+            "false_alarms_per_1000": null
+          },
+          "spamassassin": {
+            "n": 772,
+            "scam_recall": 0.738,
+            "false_alarms_per_1000": 0.0
+          }
+        }
+      }
+    },
+    "sms-email_seed2": {
+      "sms": {
+        "n_val": 845,
+        "n_test": 845,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.69195,
+            "recall": 0.9225,
+            "precision": 0.9924,
+            "false_alarms_per_1000": 1.42,
+            "n_scam": 142,
+            "n_legit": 703
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.366279,
+            "recall": 0.9577,
+            "precision": 0.9855,
+            "false_alarms_per_1000": 2.84,
+            "n_scam": 142,
+            "n_legit": 703
+          }
+        },
+        "pr_auc": 0.9904,
+        "ece": 0.0073,
+        "bands": {
+          "warn_edge": 0.011179745197296143,
+          "flag_edge": 0.6919503808021545,
+          "allow": {
+            "share_of_messages": 0.8213,
+            "scams": 2,
+            "genuine": 692
+          },
+          "warn": {
+            "share_of_messages": 0.0225,
+            "scams": 9,
+            "genuine": 10
+          },
+          "flag": {
+            "share_of_messages": 0.1562,
+            "scams": 131,
+            "genuine": 1
+          }
+        },
+        "by_source": {
+          "mendeley_2022": {
+            "n": 131,
+            "scam_recall": 0.9286,
+            "false_alarms_per_1000": 0.0
+          },
+          "uci+mendeley": {
+            "n": 696,
+            "scam_recall": 0.9186,
+            "false_alarms_per_1000": 1.64
+          },
+          "uci_2011": {
+            "n": 18,
+            "scam_recall": null,
+            "false_alarms_per_1000": 0.0
+          }
+        }
+      },
+      "email": {
+        "n_val": 5573,
+        "n_test": 5574,
+        "at_95_recall": {
+          "target_recall": 0.95,
+          "from_validation": {
+            "threshold": 0.905146,
+            "recall": 0.9508,
+            "precision": 0.997,
+            "false_alarms_per_1000": 2.85,
+            "n_scam": 2766,
+            "n_legit": 2808
+          },
+          "oracle_not_for_reporting": {
+            "threshold": 0.909032,
+            "recall": 0.9501,
+            "precision": 0.9973,
+            "false_alarms_per_1000": 2.49,
+            "n_scam": 2766,
+            "n_legit": 2808
+          }
+        },
+        "pr_auc": 0.9991,
+        "ece": 0.0101,
+        "bands": {
+          "warn_edge": 0.05642843246459961,
+          "flag_edge": 0.9051461815834045,
+          "allow": {
+            "share_of_messages": 0.5,
+            "scams": 29,
+            "genuine": 2758
+          },
+          "warn": {
+            "share_of_messages": 0.0267,
+            "scams": 107,
+            "genuine": 42
+          },
+          "flag": {
+            "share_of_messages": 0.4733,
+            "scams": 2630,
+            "genuine": 8
+          }
+        },
+        "by_source": {
+          "enron": {
+            "n": 4310,
+            "scam_recall": 0.9472,
+            "false_alarms_per_1000": 1.77
+          },
+          "nazario": {
+            "n": 492,
+            "scam_recall": 0.9837,
+            "false_alarms_per_1000": null
+          },
+          "spamassassin": {
+            "n": 772,
+            "scam_recall": 0.9127,
+            "false_alarms_per_1000": 7.37
+          }
+        }
+      }
+    }
+  }
+}

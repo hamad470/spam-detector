@@ -44,3 +44,18 @@ Source: each run's `meta.json` from the v3 Colab runs.
 | # | Date | Change | Result | Keep or drop | Why |
 |---|---|---|---|---|---|
 | 0 | 2026-11-07 | Seal the locked test; add operating-point metrics and bands (`operating_point.py`) | Tooling only, no model numbers | Keep | Ground rule: locked test, thresholds from validation only |
+| 1 | 2026-11-07 | Reference: v3 train-only DistilRoBERTa (3 seeds) scored on the locked test, thresholds for 95% recall set on validation | SMS: 93.7% ± 1.4 recall, 1.42 false alarms per 1,000. Email: 94.6% ± 1.3 recall, 1.54 ± 1.15 per 1,000 | Keep as the v4 baseline | Every later experiment is compared with this on validation; source `reports/final_test/reference.json` |
+
+### Notes on entry 1
+
+- **Thresholds set on validation land slightly under 95% on test** (SMS 92.3% to 95.1%, email 93.1% to
+  95.5% across seeds). That is the honest cost of not tuning on test, and it is reported, not corrected.
+- **SMS false alarms are one message.** 1.42 per 1,000 is 1 of 703 genuine SMS in every seed. The SMS
+  legit test set is too small to separate models on false alarms; a modern SMS ham source (task 3) is needed.
+- **SpamAssassin is the weak source.** Scam recall there ranges from 73.8% to 91.3% across seeds and
+  false alarms from 0 to 7.4 per 1,000: the shortcut-audit gap from v3 is still visible per source.
+- **Seed spread is large in thresholds** (SMS 0.69 to 0.93), so single-seed comparisons in later
+  experiments would be noise. Experiments are run on at least 3 seeds.
+- **About 100 false positives for task 8 do not exist on the clean test:** at this operating point the
+  locked test has 1 SMS and 2 to 8 email false alarms per seed. Task 8 will draw its false positives from
+  validation, the warn band and the out-of-domain sets instead, and say so.
